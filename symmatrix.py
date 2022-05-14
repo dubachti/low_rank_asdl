@@ -2,7 +2,7 @@ import os
 from operator import iadd
 import numpy as np
 import torch
-from .utils import cholesky_inv
+from .utils import cholesky_inv, sherman_morrison_inv
 from .vector import ParamVector
 
 __all__ = [
@@ -11,6 +11,7 @@ __all__ = [
     'get_n_cols_by_tril',
     'SymMatrix',
     'Kron',
+    'Kron_lr',
     'Diag',
     'UnitWise'
 ]
@@ -81,13 +82,17 @@ def _load_from_numpy(path, device='cpu'):
 
 
 class SymMatrix:
-    def __init__(self, data=None, kron=None, diag=None, unit=None,
-                 kron_A=None, kron_B=None, diag_weight=None, diag_bias=None, unit_data=None):
+    def __init__(self, data=None, kron=None, kron_lr=None, diag=None, unit=None,
+                 kron_A=None, kron_B=None, kron_lr_A=None, kron_lr_B=None, diag_weight=None, diag_bias=None, unit_data=None):
         self.data = data
         if kron_A is not None or kron_B is not None:
             self.kron = Kron(kron_A, kron_B)
         else:
             self.kron = kron
+        if kron_lr_A is not None or kron_lr_B is not None:
+            self.kron_lr = Kron_lr(kron_lr_A, kron_lr_B)
+        else:
+            self.kron_lr = kron_lr
         if diag_weight is not None or diag_bias is not None:
             self.diag = Diag(diag_weight, diag_bias)
         else:
@@ -105,6 +110,10 @@ class SymMatrix:
     @property
     def has_kron(self):
         return self.kron is not None
+
+    @property
+    def has_kron_lr(self):
+        return self.kron_lr is not None
 
     @property
     def has_diag(self):
@@ -147,6 +156,8 @@ class SymMatrix:
             self.data.mul_(value)
         if self.has_kron:
             self.kron.mul_(value)
+        if self.has_kron_lr:
+            self.kron_lr.mul_(value)
         if self.has_diag:
             self.diag.mul_(value)
         if self.has_unit:
@@ -249,6 +260,8 @@ class SymMatrix:
             self.inv = cholesky_inv(self.data, damping)
         if self.has_kron:
             self.kron.update_inv(damping)
+        if self.has_kron_lr:
+            self.kron_lr.update_inv(damping)
         if self.has_diag:
             self.diag.update_inv(damping)
         if self.has_unit:
@@ -449,6 +462,116 @@ class Kron:
             return mvp_w, mvp_b
         return mvp_w
 
+class Kron_lr:
+    def __init__(self, A, B):
+        self.A = A # (eig_a, vec_a)
+        self.B = B # (eig_b, vec_b, diag_b)
+        self.A_inv = None
+        self.B_inv = None
+        self._A_dim = self._B_dim = None
+
+    @property
+    def data(self):
+        return [self.A, self.B]
+
+    @property
+    def has_data(self):
+        return self.has_A or self.has_B
+
+    @property
+    def has_A(self):
+        return self.A is not None
+
+    @property
+    def has_B(self):
+        return self.B is not None
+
+    @property
+    def A_dim(self):
+        if self._A_dim is None and self.A is not None:
+            self._A_dim = self.A[1].shape[1]
+        return self._A_dim
+
+    @property
+    def B_dim(self):
+        if self._B_dim is None and self.B is not None:
+            self._B_dim = self.B[1].shape[1]
+        return self._B_dim
+
+    def device(self):
+        if self.A[0].is_cuda:
+            return self.A[0].get_device()
+        return torch.device('cpu')
+
+    def A_trace(self):
+        return torch.sum(self.A[0])
+        
+    def B_trace(self):
+        return torch.sum(self.B[2])
+
+    def mul_(self, value):
+        if self.has_A:
+            self.A[0].mul_(value)
+        if self.has_B:
+            self.B[0].mul_(value)
+            self.B[2].mul_(value)
+        return self
+
+    def update_inv(self, damping=_default_damping, calc_A_inv=True, calc_B_inv=True, eps=1e-7):
+        assert self.has_data
+        device = self.device()
+        if self.has_A and self.has_B:
+            eps = torch.tensor(eps, device=device)
+            A_eig_mean = torch.max(self.A_trace() / self.A_dim, eps)
+            B_eig_mean = torch.max(self.B_trace() / self.B_dim, eps)
+            pi = torch.sqrt(torch.abs(A_eig_mean / B_eig_mean))
+            r = torch.tensor(damping**0.5, device=device)
+            damping_A = (max(r * pi, eps))
+            damping_B = (max(r / pi, eps))
+        else:
+            damping_A = damping_B = damping
+        if calc_A_inv:
+            assert self.has_A
+            if not torch.all(self.A[0] == 0):
+                self.A_inv = sherman_morrison_inv(eig=self.A[0], vec=self.A[1], 
+                                                damping=damping_A, device=device)
+        if calc_B_inv:
+            assert self.has_B
+            if not torch.all(self.B[0] == 0):
+                self.B_inv = sherman_morrison_inv(eig=self.B[0], vec=self.B[1], diag=self.B[2], 
+                                                damping=damping_B, device=device)
+
+    # for power-iteration
+    def kronvp_fn(U: torch.Tensor,
+                diag: bool = False):
+        if not diag:
+            return lambda v: torch.matmul(U.T, torch.matmul(U, v))
+        else:
+            d = torch.sum(U*U, dim=0)
+            return lambda v: torch.matmul(U.T, torch.matmul(U, v)) -  torch.mul(d,v)
+
+    def mvp(self, vec_weight, vec_bias=None, use_inv=False, inplace=False):
+        vec_weight_2d = vec_weight.view(self.B_dim, -1)
+        if use_inv:
+            mat_A = self.A_inv
+            mat_B = self.B_inv
+            mvp_w = torch.matmul(torch.matmul(mat_B, vec_weight_2d), mat_A).view_as(vec_weight)
+        else:
+            eig_a, vec_a, = self.A
+            eig_b, vec_b, diag_b = self.B
+            bvp = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_weight_2d)) + (diag_b * vec_weight_2d.T).T
+            mvp_w = torch.matmul(torch.matmul(bvp, (vec_a * eig_a).T), vec_a).view_as(vec_weight)
+        if inplace:
+            vec_weight.copy_(mvp_w)
+        if vec_bias is not None:
+            if use_inv:
+                mvp_b = mat_B.mv(vec_bias)
+            else:
+                mvp_b = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_bias)) + (diag_b * vec_bias.T).T
+            if inplace:
+                vec_bias.copy_(mvp_b)
+            return mvp_w, mvp_b
+        return mvp_w
 
 class Diag:
     def __init__(self, weight=None, bias=None):

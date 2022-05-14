@@ -14,6 +14,7 @@ FISHER_EMP = 'fisher_emp'  # no-centered covariance a.k.a. empirical Fisher
 SHAPE_FULL = 'full'  # full
 SHAPE_LAYER_WISE = 'layer_wise'  # layer-wise block-diagonal
 SHAPE_KRON = 'kron'  # Kronecker-factored
+SHAPE_KRON_LR = 'kron_lr'  # low-rank Kronecker-factored
 SHAPE_UNIT_WISE = 'unit_wise'  # unit-wise block-diagonal
 SHAPE_DIAG = 'diag'  # diagonal
 
@@ -26,12 +27,13 @@ __all__ = [
     'SHAPE_FULL',
     'SHAPE_LAYER_WISE',
     'SHAPE_KRON',
+    'SHAPE_KRON_LR',
     'SHAPE_UNIT_WISE',
     'SHAPE_DIAG',
 ]
 
 _supported_types = [HESSIAN, FISHER_EXACT, FISHER_MC, FISHER_EMP]
-_supported_shapes = [SHAPE_FULL, SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_DIAG]
+_supported_shapes = [SHAPE_FULL, SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_KRON_LR, SHAPE_DIAG]
 
 _normalizations = (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d)
 

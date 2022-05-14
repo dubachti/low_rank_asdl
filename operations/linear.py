@@ -3,6 +3,8 @@ from torch import nn
 import torch.nn.functional as F
 
 from .operation import Operation
+from ..utils import power_method
+from ..symmatrix import Kron_lr
 
 
 class Linear(Operation):
@@ -76,6 +78,16 @@ class Linear(Operation):
     @staticmethod
     def cov_kron_B(module, out_grads):
         return torch.matmul(out_grads.T, out_grads)  # f_out x f_out
+
+    @staticmethod
+    def cov_kron_lr_A(module, in_data, rank, max_itr):
+        return power_method(Kron_lr.kronvp_fn(in_data, diag=False), in_data.shape, 
+                            top_n=rank, max_itr=max_itr, device=in_data.get_device()) # = eigs, vecs
+
+    @staticmethod
+    def cov_kron_lr_B(module, out_grads, rank, max_itr):
+        return *power_method(Kron_lr.kronvp_fn(out_grads, diag=True), out_grads.shape, 
+                            top_n=rank, max_itr=max_itr, device=out_grads.get_device()), torch.sum(out_grads**2, dim=0) # = eigs, vecs, diag
 
     @staticmethod
     def cov_unit_wise(module, in_data, out_grads):

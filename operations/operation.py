@@ -14,6 +14,7 @@ OP_FULL_CVP = 'full_cvp'  # full covariance-vector product
 OP_COV = 'cov'  # layer-wise covariance
 OP_CVP = 'cvp'  # layer-wise covariance-vector product
 OP_COV_KRON = 'cov_kron'  # Kronecker-factored
+OP_COV_KRON_LR = 'cov_kron_lr'  # low-rank Kronecker-factored
 OP_COV_DIAG = 'cov_diag'  # diagonal
 OP_COV_UNIT_WISE = 'cov_unit_wise'  # unit-wise
 OP_RFIM_RELU = 'rfim_relu'  # relative FIM for ReLU
@@ -28,14 +29,14 @@ OP_SAVE_INPUTS = 'save_inputs'  # save inputs during a forward-pass
 OP_SAVE_OUTGRADS = 'save_outgrads'  # save outgrads during a backward-pass
 
 ALL_OPS = [OP_FULL_COV, OP_FULL_CVP, OP_COV, OP_CVP,
-           OP_COV_KRON, OP_COV_DIAG, OP_COV_UNIT_WISE,
+           OP_COV_KRON, OP_COV_KRON_LR, OP_COV_DIAG, OP_COV_UNIT_WISE,
            OP_RFIM_RELU, OP_RFIM_SOFTMAX,
            OP_GRAM_DIRECT, OP_GRAM_HADAMARD, OP_BATCH_GRADS,
            OP_SAVE_INPUTS, OP_SAVE_OUTGRADS]
 
-FWD_OPS = [OP_SAVE_INPUTS, OP_COV_KRON, OP_GRAM_HADAMARD, OP_RFIM_RELU, OP_RFIM_SOFTMAX]
+FWD_OPS = [OP_SAVE_INPUTS, OP_COV_KRON, OP_COV_KRON_LR, OP_GRAM_HADAMARD, OP_RFIM_RELU, OP_RFIM_SOFTMAX]
 BWD_OPS_WITH_INPUTS = [OP_COV, OP_CVP, OP_COV_DIAG, OP_COV_UNIT_WISE, OP_BATCH_GRADS, OP_GRAM_DIRECT]
-BWD_OPS = [OP_SAVE_OUTGRADS, OP_COV_KRON, OP_GRAM_HADAMARD, OP_RFIM_RELU, OP_RFIM_SOFTMAX] + BWD_OPS_WITH_INPUTS
+BWD_OPS = [OP_SAVE_OUTGRADS, OP_COV_KRON, OP_COV_KRON_LR, OP_GRAM_HADAMARD, OP_RFIM_RELU, OP_RFIM_SOFTMAX] + BWD_OPS_WITH_INPUTS
 
 
 class Operation:
@@ -102,15 +103,7 @@ class Operation:
     def clear_results(self):
         self._op_results = {}
 
-    def add_op_name(self, op_name):
-        if op_name not in self._op_names:
-            self._op_names.add(op_name)
-
-    def remove_op_name(self, op_name):
-        while op_name in self._op_names:
-            self._op_names.remove(op_name)
-
-    def forward_post_process(self, in_data: torch.Tensor, out_data: torch.Tensor):
+    def forward_post_process(self, in_data: torch.Tensor, out_data: torch.Tensor, rank=1, max_itr=1):
         module = self._module
         op_names = self._op_names
 
@@ -125,6 +118,9 @@ class Operation:
             if op_name == OP_COV_KRON:
                 A = self.cov_kron_A(module, in_data)
                 self.accumulate_result(A, OP_COV_KRON, 'A')
+            elif op_name == OP_COV_KRON_LR:
+                A = self.cov_kron_lr_A(module, in_data, rank=rank, max_itr=max_itr)
+                self.accumulate_result(A, OP_COV_KRON_LR, 'A')
             elif op_name == OP_GRAM_HADAMARD:
                 assert self._model_for_kernel is not None, f'model_for_kernel needs to be set for {OP_GRAM_HADAMARD}.'
                 n_data = in_data.shape[0]
@@ -140,7 +136,7 @@ class Operation:
             elif op_name == OP_RFIM_SOFTMAX:
                 self.accumulate_result(self.rfim_softmax(module, in_data, out_data), OP_RFIM_SOFTMAX)
 
-    def backward_pre_process(self, in_data, out_data, out_grads, vector: torch.Tensor = None):
+    def backward_pre_process(self, in_data, out_data, out_grads, vector: torch.Tensor = None, rank=1, max_itr=1):
         module = self._module
         op_names = self._op_names
 
@@ -175,6 +171,9 @@ class Operation:
             elif op_name == OP_COV_KRON:
                 B = self.cov_kron_B(module, out_grads)
                 self.accumulate_result(B, OP_COV_KRON, 'B')
+            elif op_name == OP_COV_KRON_LR:
+                B = self.cov_kron_lr_B(module, out_grads, rank=rank, max_itr=max_itr)
+                self.accumulate_result(B, OP_COV_KRON_LR, 'B')
             elif op_name == OP_COV_UNIT_WISE:
                 if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm)):
                     assert original_requires_grad(module, 'weight') and original_requires_grad(module, 'bias'), \
@@ -285,6 +284,14 @@ class Operation:
         raise NotImplementedError
 
     @staticmethod
+    def cov_kron_lr_A(module, in_data, rank, max_itr):
+        raise NotImplementedError
+
+    @staticmethod
+    def cov_kron_lr_B(module, out_grads, rank, max_itr):
+        raise NotImplementedError
+
+    @staticmethod
     def cov_unit_wise(module, in_data, out_grads):
         raise NotImplementedError
 
@@ -345,12 +352,12 @@ class OperationContext:
         for key in keys:
             del self._operations[key]
 
-    def call_operations_in_forward(self, module, in_data, out_data):
-        self.get_operation(module).forward_post_process(in_data, out_data)
+    def call_operations_in_forward(self, module, in_data, out_data, rank=1, max_itr=1):
+        self.get_operation(module).forward_post_process(in_data, out_data, rank=rank, max_itr=max_itr)
 
-    def call_operations_in_backward(self, module, in_data, out_data, out_grads):
+    def call_operations_in_backward(self, module, in_data, out_data, out_grads, rank=1, max_itr=1):
         vector = self.get_vectors_by_module(module, flatten=True)
-        self.get_operation(module).backward_pre_process(in_data, out_data, out_grads, vector)
+        self.get_operation(module).backward_pre_process(in_data, out_data, out_grads, vector, rank=rank, max_itr=max_itr)
 
     def get_result(self, module, *keys, pop=False, default=None):
         try:
@@ -485,6 +492,9 @@ class OperationContext:
     def cov_kron(self, module):
         return self.get_result(module, OP_COV_KRON)
 
+    def cov_kron_lr(self, module):
+        return self.get_result(module, OP_COV_KRON_LR)
+
     def cov_unit_wise(self, module):
         return self.get_result(module, OP_COV_UNIT_WISE)
 
@@ -520,6 +530,33 @@ class OperationContext:
                             tensor = tensor * self._output_scale
                         B = operation.cov_kron_B(module, tensor)
                         self.accumulate_result(module, B, OP_COV_KRON, 'B')
+        elif shape == SHAPE_KRON_LR:
+            if kron is None:
+                kron = ['A', 'B']
+            if 'A' in kron and in_data is not None:
+                max_len = len(in_data) if num_batches is None else min(len(in_data), num_batches)
+                with nvtx.range('cov_kron_lr_A' + tag):
+                    for i in range(max_len):
+                        if clear_in_out:
+                            tensor = in_data.pop(0)
+                        else:
+                            tensor = in_data[i]
+                        if self._input_scale != 1:
+                            tensor = tensor * self._input_scale
+                        A = operation.cov_kron_lr_A(module, tensor)
+                        self.accumulate_result(module, A, OP_COV_KRON_LR, 'A')
+            if 'B' in kron and out_grads is not None:
+                max_len = len(out_grads) if num_batches is None else min(len(out_grads), num_batches)
+                with nvtx.range('cov_kron_lr_B' + tag):
+                    for i in range(max_len):
+                        if clear_in_out:
+                            tensor = out_grads.pop(0)
+                        else:
+                            tensor = out_grads[i]
+                        if self._output_scale != 1:
+                            tensor = tensor * self._output_scale
+                        B = operation.cov_kron_lr_B(module, tensor)
+                        self.accumulate_result(module, B, OP_COV_KRON_LR, 'B')
         else:
             if in_data is None or out_grads is None:
                 return
@@ -551,6 +588,9 @@ class OperationContext:
     def calc_cov_kron(self, module, clear_in_out=False):
         self.calc_cov(module, SHAPE_KRON, clear_in_out)
 
+    def calc_cov_kron_lr(self, module, clear_in_out=False):
+        self.calc_cov(module, SHAPE_KRON_LR, clear_in_out)
+
     def calc_cov_unit_wise(self, module, clear_in_out=False):
         self.calc_cov(module, SHAPE_UNIT_WISE, clear_in_out)
 
@@ -564,6 +604,10 @@ class OperationContext:
         if cov_kron is not None:
             kwargs['kron_A'] = cov_kron.pop('A', None)
             kwargs['kron_B'] = cov_kron.pop('B', None)
+        cov_kron_lr = self.get_result(module, OP_COV_KRON_LR, pop=pop)
+        if cov_kron_lr is not None:
+            kwargs['kron_lr_A'] = cov_kron_lr.pop('A', None)
+            kwargs['kron_lr_B'] = cov_kron_lr.pop('B', None)
         cov_diag = self.get_result(module, OP_COV_DIAG, pop=pop)
         if cov_diag is not None:
             if original_requires_grad(module, 'weight'):

@@ -17,7 +17,7 @@ from ..fisher import LOSS_CROSS_ENTROPY, get_fisher_class
 
 _normalizations = (nn.BatchNorm1d, nn.BatchNorm2d)
 _invalid_ema_decay = -1
-_module_level_shapes = [SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_UNIT_WISE, SHAPE_DIAG]
+_module_level_shapes = [SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_KRON_LR, SHAPE_UNIT_WISE, SHAPE_DIAG]
 
 __all__ = [
     'NaturalGradient', 'FullNaturalGradient', 'LayerWiseNaturalGradient', 'KFAC',
@@ -37,7 +37,10 @@ class NaturalGradient:
         fisher_type=FISHER_EXACT,
         fisher_shape=SHAPE_FULL,
         loss_type=LOSS_CROSS_ENTROPY,
+        *,
         damping=1e-5,
+        rank=1,
+        max_itr=1, 
         ema_decay=_invalid_ema_decay,
         grad_scale=1.,
         ignore_modules=None,
@@ -55,6 +58,8 @@ class NaturalGradient:
         self.fisher_type = fisher_type
         self.loss_type = loss_type
         self.damping = damping
+        self.rank = rank
+        self.max_itr = max_itr
         self.ema_decay = ema_decay
         self.grad_scale = grad_scale
         if isinstance(fisher_shape, str):
@@ -152,6 +157,8 @@ class NaturalGradient:
             return fisher
         elif shape == SHAPE_KRON:
             return fisher.kron
+        elif shape == SHAPE_KRON_LR:
+            return fisher.kron_lr
         elif shape == SHAPE_UNIT_WISE:
             return fisher.unit
         elif shape == SHAPE_DIAG:
@@ -235,7 +242,9 @@ class NaturalGradient:
                                                        calc_emp_loss_grad=calc_emp_loss_grad,
                                                        seed=seed,
                                                        scale=scale,
-                                                       stream=stream)
+                                                       stream=stream,
+                                                       rank=self.rank, 
+                                                       max_itr=self.max_itr)
             return rst[0], rst[1]  # loss and outputs
 
     def save_curvature(self, cxt, scale=1., module=None, module_name=None):
@@ -336,9 +345,17 @@ class NaturalGradient:
                     for A_or_B in kron:
                         event += f'_{A_or_B}'
                 nvtx.range_push(event + self.nvtx_tag(name))
+                if shape == SHAPE_KRON_LR:
+                    for A_or_B in kron:
+                        event += f'_{A_or_B}'
+                nvtx.range_push(event + self.nvtx_tag(name))
 
                 if self.is_module_for_inv_and_precondition(module):
                     if shape == SHAPE_KRON:
+                        matrix.update_inv(damping,
+                                          calc_A_inv='A' in kron,
+                                          calc_B_inv='B' in kron)
+                    elif shape == SHAPE_KRON_LR:
                         matrix.update_inv(damping,
                                           calc_A_inv='A' in kron,
                                           calc_B_inv='B' in kron)

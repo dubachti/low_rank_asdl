@@ -4,13 +4,15 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import BatchSampler, Subset, DataLoader
+from typing import List, Callable
 
 _REQUIRES_GRAD_ATTR = '_original_requires_grad'
 
 __all__ = [
     'original_requires_grad', 'record_original_requires_grad',
     'restore_original_requires_grad', 'skip_param_grad', 'im2col_2d',
-    'im2col_2d_slow', 'cholesky_inv', 'PseudoBatchLoaderGenerator'
+    'im2col_2d_slow', 'cholesky_inv', 'sherman_morrison_inv',
+    'power_method', 'PseudoBatchLoaderGenerator'
 ]
 
 
@@ -83,6 +85,77 @@ def cholesky_inv(X, damping=1e-7):
     u = torch.linalg.cholesky(X)
     diag -= damping
     return torch.cholesky_inverse(u)
+
+def sherman_morrison_inv(eig: torch.Tensor,
+                         vec: torch.Tensor,
+                         damping: torch.Tensor,
+                         diag: torch.Tensor = None,
+                         device: torch.device = None):               
+
+    dim = vec.shape[1]
+    if diag is None: diag = torch.tensor(0, device=device)
+    D_inv = 1/(torch.ones(dim, device=device) * damping + diag)
+    top = eig[0] * torch.outer(torch.mul(D_inv, vec[0]), torch.mul(vec[0], D_inv))
+    bot = 1. + (eig[0] * torch.dot(torch.mul(vec[0], D_inv), vec[0]))
+    inv = torch.diag(D_inv) - (top/bot)
+    for w, v in zip(eig[1:], vec[1:]):
+        top = w * torch.outer(torch.matmul(inv, v), torch.matmul(torch.t(v), inv))
+        bot = 1. + (w * torch.dot(torch.matmul(torch.t(v), inv), v))
+        inv = inv - (top/bot)
+    return inv
+
+def power_method(mvp_fn,
+                shape,
+                top_n,
+                max_itr,
+                device,
+                tol=1e-6,
+                random_seed=None):
+
+    assert top_n >= 1, f'rank {top_n} not possible'
+    assert max_itr >= 1, f'max_iters = {max_itr} not possible'
+
+    if top_n > min(shape): top_n = min(shape)
+
+    eigvals = torch.zeros(top_n, device=device)
+    eigvecs = torch.zeros((top_n, shape[1]), device=device)
+
+    for i in range(top_n):
+        vec = torch.rand(shape[1], device=device)
+        #vec = torch.ones(shape[1], device=calc_device)
+        eigval = None
+        last_eigval = None
+        # power iteration
+        for j in range(max_itr):
+            vec = _orthonormal(vec, eigvecs[:i])
+            Mv = _mvp(mvp_fn, vec, random_seed=random_seed)
+            eigval = Mv.dot(vec)
+            if j > 0:
+                diff = torch.abs(eigval - last_eigval) / (torch.abs(last_eigval) + 1e-5)
+                if diff < tol:
+                    break
+            last_eigval = eigval
+            vec = Mv
+        eigvals[i] = eigval
+        eigvecs[i] = vec
+    return eigvals, eigvecs
+
+def _mvp(mvp_fn: Callable[[torch.Tensor], torch.Tensor],
+        vec: torch.Tensor,
+        random_seed=None,
+        damping=None) -> torch.Tensor:
+    if random_seed:
+        # for matrices that are not deterministic (e.g., fisher_mc)
+        torch.manual_seed(random_seed)
+    Mv = mvp_fn(vec)
+    if damping:
+        Mv.add_(vec, alpha=damping)
+    return Mv
+
+def _orthonormal(w: torch.Tensor, v_list: List[torch.Tensor]) -> torch.Tensor:
+    for v in v_list:
+        w = w.add(v, alpha=-w.dot(v))
+    return torch.nn.functional.normalize(w, dim=0)
 
 
 class PseudoBatchLoaderGenerator:

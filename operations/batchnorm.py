@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from .operation import Operation, OP_COV_KRON, OP_COV_UNIT_WISE, OP_GRAM_HADAMARD, OP_GRAM_DIRECT  # NOQA
+from .operation import Operation, OP_COV_KRON, OP_COV_KRON_LR, OP_COV_UNIT_WISE, OP_GRAM_HADAMARD, OP_GRAM_DIRECT  # NOQA
 
 
 class _BatchNormNd(Operation):
@@ -10,6 +10,12 @@ class _BatchNormNd(Operation):
             op_names = op_names.copy()
             # kron operation is not supported. unit_wise will be used instead.
             op_names.remove(OP_COV_KRON)
+            op_names.append(OP_COV_UNIT_WISE)
+
+        if OP_COV_KRON_LR in op_names:
+            op_names = op_names.copy()
+            # kron operation is not supported. unit_wise will be used instead.
+            op_names.remove(OP_COV_KRON_LR)
             op_names.append(OP_COV_UNIT_WISE)
 
         if OP_GRAM_HADAMARD in op_names:
@@ -73,6 +79,18 @@ class _BatchNormNd(Operation):
 
     @staticmethod
     def cov_kron_B(module, out_grads):
+        raise ValueError(
+            f'{OP_COV_KRON} operation is not supported in BatchNormNd.'
+        )
+
+    @staticmethod
+    def cov_kron_lr_A(module, in_data, rank, max_itr):
+        raise ValueError(
+            f'{OP_COV_KRON} operation is not supported in BatchNormNd.'
+        )
+
+    @staticmethod
+    def cov_kron_lr_B(module, out_grads, rank, max_itr):
         raise ValueError(
             f'{OP_COV_KRON} operation is not supported in BatchNormNd.'
         )

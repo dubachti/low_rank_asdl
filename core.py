@@ -22,7 +22,9 @@ def extend(model,
            ignore_modules=None,
            map_rule=None,
            vectors: ParamVector = None,
-           stream: Stream = None) -> OperationContext:
+           stream: Stream = None,
+           rank: int = 1,
+           max_itr: int = 1) -> OperationContext:
     handles = []
     cxt = OperationContext(vectors=vectors)
     stream_cxt = torch.cuda.stream(stream) if torch.cuda.is_available() and stream is not None else nullcontext()
@@ -44,24 +46,24 @@ def extend(model,
                 if has_bwd_op_with_inputs:
                     def forward_hook(_module, in_data, out_data):
                         with stream_cxt:
-                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach())
+                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr)
                         if out_data.requires_grad:
                             def _backward_hook(out_grads):
                                 with stream_cxt:
-                                    cxt.call_operations_in_backward(_module, in_data[0].detach(), out_data.detach(), out_grads.detach())
+                                    cxt.call_operations_in_backward(_module, in_data[0].detach(), out_data.detach(), out_grads.detach(), rank=rank, max_itr=max_itr)
                             handles.append(out_data.register_hook(_backward_hook))
                 else:
                     def forward_hook(_module, in_data, out_data):
                         with stream_cxt:
-                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach())
+                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr)
                 handles.append(module.register_forward_hook(forward_hook))
             if (not has_bwd_op_with_inputs) and has_bwd_op:
-                def backward_hook(_module, unused, out_grads):
+                def backward_hook(_module, in_grads, out_grads):
                     with stream_cxt:
                         try:
-                            cxt.call_operations_in_backward(_module, None, None, out_grads[0].detach())
+                            cxt.call_operations_in_backward(_module, None, in_grads[0], out_grads[0].detach(), rank=rank, max_itr=max_itr)
                         except NameError:
-                            # context resource is already released.
+                             # context resource is already released.
                             pass
 
                 handles.append(module.register_full_backward_hook(backward_hook))
@@ -80,15 +82,16 @@ def extend(model,
         del cxt
 
 
-def no_centered_cov(model: nn.Module, shapes, ignore_modules=None, cvp=False, vectors: ParamVector = None, stream: Stream = None) -> OperationContext:
+def no_centered_cov(model: nn.Module, shapes, ignore_modules=None, cvp=False, vectors: ParamVector = None, stream: Stream = None, rank = 1, max_itr = 1) -> OperationContext:
     shape_to_op = {
         SHAPE_FULL: OP_BATCH_GRADS,  # full
         SHAPE_LAYER_WISE: OP_CVP if cvp else OP_COV,  # layer-wise block-diagonal
         SHAPE_KRON: OP_COV_KRON,  # Kronecker-factored
+        SHAPE_KRON_LR: OP_COV_KRON_LR, # low-rank Kronecker-factored
         SHAPE_UNIT_WISE: OP_COV_UNIT_WISE,  # unit-wise block-diagonal
         SHAPE_DIAG: OP_COV_DIAG,  # diagonal
     }
-    return extend(model, *shapes, ignore_modules=ignore_modules, map_rule=lambda s: shape_to_op[s], vectors=vectors, stream=stream)
+    return extend(model, *shapes, ignore_modules=ignore_modules, map_rule=lambda s: shape_to_op[s], vectors=vectors, stream=stream, rank=rank, max_itr=max_itr)
 
 
 def save_inputs_outgrads(model: nn.Module, targets=None, ignore_modules=None) -> OperationContext:
