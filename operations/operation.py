@@ -8,6 +8,38 @@ from ..matrices import *
 from ..symmatrix import *
 from ..vector import ParamVector
 
+"""
+import pickle
+class Save:
+    count = 0
+
+    @staticmethod
+    def save(a,a_lr):
+        if Save.count % 420 in range(0,42):
+            if Save.count %420 < 21:
+                eig, vec = a_lr
+                ans = eig[0]*torch.outer(vec[0], vec[0])
+                for i, w in enumerate(eig[1:]):
+                    ans += w*torch.outer(vec[i+1], vec[i+1])
+            
+                a_err = torch.norm(a-ans)/torch.norm(a)
+                with open('/users/tdubach/error/errA.txt', 'ab+') as fp:
+                    pickle.dump(a_err, fp)
+            else:
+                #eig, vec, diag = a_lr
+                eig, vec = a_lr
+                ans = eig[0]*torch.outer(vec[0], vec[0])
+                for i, w in enumerate(eig[1:]):
+                    ans += w*torch.outer(vec[i+1], vec[i+1])
+                #ans += torch.diag(diag)
+            
+                a_err = torch.norm(a-ans)/torch.norm(a)
+                with open('/users/tdubach/error/errb.txt', 'ab+') as fp:
+                    pickle.dump(a_err, fp)
+
+        Save.count += 1
+"""
+
 # compute no-centered covariance
 OP_FULL_COV = 'full_cov'  # full covariance
 OP_FULL_CVP = 'full_cvp'  # full covariance-vector product
@@ -117,6 +149,10 @@ class Operation:
                 continue
             if op_name == OP_COV_KRON:
                 A = self.cov_kron_A(module, in_data)
+
+                #A_lr = self.cov_kron_lr_A(module, in_data, rank=rank, max_itr=max_itr)
+                #Save.save(A, A_lr)
+
                 self.accumulate_result(A, OP_COV_KRON, 'A')
             elif op_name == OP_COV_KRON_LR:
                 A = self.cov_kron_lr_A(module, in_data, rank=rank, max_itr=max_itr)
@@ -170,6 +206,10 @@ class Operation:
                     self.accumulate_result(cvp.view_as(module.bias), OP_CVP, 'bias')
             elif op_name == OP_COV_KRON:
                 B = self.cov_kron_B(module, out_grads)
+
+                #B_lr = self.cov_kron_lr_B(module, out_grads, rank=rank, max_itr=max_itr)
+                #Save.save(B,B_lr)
+
                 self.accumulate_result(B, OP_COV_KRON, 'B')
             elif op_name == OP_COV_KRON_LR:
                 B = self.cov_kron_lr_B(module, out_grads, rank=rank, max_itr=max_itr)

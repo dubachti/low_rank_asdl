@@ -45,7 +45,7 @@ __all__ = [
 ]
 
 _supported_types = [FISHER_EXACT, FISHER_MC, FISHER_EMP]
-_supported_shapes = [SHAPE_FULL, SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_UNIT_WISE, SHAPE_DIAG]
+_supported_shapes = [SHAPE_FULL, SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_KRON_LR, SHAPE_UNIT_WISE, SHAPE_DIAG]
 _supported_shapes_for_fvp = [SHAPE_FULL, SHAPE_LAYER_WISE]
 
 
@@ -88,7 +88,9 @@ class FisherManager(MatrixManager):
                          calc_emp_loss_grad=False,
                          seed=None,
                          scale=1.,
-                         stream: Stream = None):
+                         stream: Stream = None,
+                         rank = 1, 
+                         max_itr = 1):
         model = self._model
         device = self._device
         if isinstance(fisher_shapes, str):
@@ -109,7 +111,7 @@ class FisherManager(MatrixManager):
             if seed:
                 torch.random.manual_seed(seed)
 
-            with no_centered_cov(model, fisher_shapes, cvp=fvp, vectors=vec, stream=stream) as cxt:
+            with no_centered_cov(model, fisher_shapes, cvp=fvp, vectors=vec, stream=stream, rank=rank, max_itr=max_itr) as cxt:
                 def closure(loss_expr, retain_graph=False):
                     cxt.clear_batch_grads()
                     loss = loss_expr()
