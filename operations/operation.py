@@ -9,33 +9,64 @@ from ..symmatrix import *
 from ..vector import ParamVector
 
 """
+from ..utils import power_method
 import pickle
 class Save:
     count = 0
 
+        ###
+    @staticmethod
+    def con_cov_kron_lr_A(in_data, rank, max_itr):
+        out_size = in_data.shape[-1]
+        m = in_data.transpose(0, 1).flatten(start_dim=1)
+        eig, vec = power_method(Kron_lr.kronvp_fn(m.T, diag=False), m.T.shape, 
+                            top_n=rank, max_itr=max_itr, device=m.get_device())
+        return eig.div(out_size), vec
+    @staticmethod
+    def con_cov_kron_lr_B(out_grads, rank, max_itr):
+        m = out_grads.transpose(0, 1).flatten(start_dim=1)  # c_out x n(out_size)
+        return *power_method(Kron_lr.kronvp_fn(m.T, diag=True), m.T.shape, 
+                             top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
+    @staticmethod
+    def lin_cov_kron_lr_A(in_data, rank, max_itr):
+        return power_method(Kron_lr.kronvp_fn(in_data, diag=False), in_data.shape, 
+                            top_n=rank, max_itr=max_itr, device=in_data.get_device()) # = eigs, vecs
+    @staticmethod
+    def lin_cov_kron_lr_B(out_grads, rank, max_itr):
+        return *power_method(Kron_lr.kronvp_fn(out_grads, diag=True), out_grads.shape, 
+                            top_n=rank, max_itr=max_itr, device=out_grads.get_device()), torch.sum(out_grads**2, dim=0) # = eigs, vecs, diag
+    ###
+
     @staticmethod
     def save(a,a_lr):
+        layer_type = a_lr[1]
         if Save.count % 420 in range(0,42):
+
             if Save.count %420 < 21:
-                eig, vec = a_lr
+                if layer_type == 'c':
+                    eig, vec = Save.con_cov_kron_lr_A(a_lr[0], a_lr[2], a_lr[3])
+                else:
+                    eig, vec = Save.lin_cov_kron_lr_A(a_lr[0], a_lr[2], a_lr[3])
                 ans = eig[0]*torch.outer(vec[0], vec[0])
                 for i, w in enumerate(eig[1:]):
                     ans += w*torch.outer(vec[i+1], vec[i+1])
-            
-                a_err = torch.norm(a-ans)/torch.norm(a)
-                with open('/users/tdubach/error/errA.txt', 'ab+') as fp:
-                    pickle.dump(a_err, fp)
+                with open('/users/tdubach/error/A.txt', 'ab+') as fp:
+                    pickle.dump(a, fp)
+                with open('/users/tdubach/error/A_lr.txt', 'ab+') as fp:
+                    pickle.dump(ans, fp)
             else:
-                #eig, vec, diag = a_lr
-                eig, vec = a_lr
+                if layer_type == 'c':
+                    eig, vec, diag = Save.con_cov_kron_lr_B(a_lr[0], a_lr[2], a_lr[3])
+                else:
+                    eig, vec, diag = Save.lin_cov_kron_lr_B(a_lr[0], a_lr[2], a_lr[3])
                 ans = eig[0]*torch.outer(vec[0], vec[0])
                 for i, w in enumerate(eig[1:]):
                     ans += w*torch.outer(vec[i+1], vec[i+1])
-                #ans += torch.diag(diag)
-            
-                a_err = torch.norm(a-ans)/torch.norm(a)
-                with open('/users/tdubach/error/errb.txt', 'ab+') as fp:
-                    pickle.dump(a_err, fp)
+                ans += torch.diag(diag)
+                with open('/users/tdubach/error/B.txt', 'ab+') as fp:
+                    pickle.dump(a, fp)
+                with open('/users/tdubach/error/B_lr.txt', 'ab+') as fp:
+                    pickle.dump(ans, fp)
 
         Save.count += 1
 """

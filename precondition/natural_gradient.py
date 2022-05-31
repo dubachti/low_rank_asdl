@@ -4,7 +4,7 @@ from contextlib import nullcontext
 
 import torch
 from torch import nn
-from torch.cuda import Stream, nvtx
+from torch.cuda import Stream#, nvtx
 import torch.distributed as dist
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
@@ -23,6 +23,44 @@ __all__ = [
     'NaturalGradient', 'FullNaturalGradient', 'LayerWiseNaturalGradient', 'KFAC',
     'UnitWiseNaturalGradient', 'DiagNaturalGradient', 'EmpiricalNaturalGradient'
 ]
+
+
+import pickle
+from asdfghjkl.symmatrix import Kron_lr2
+class Save:
+    count = 0
+
+    @staticmethod
+    def save(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
+        if Save.count % 210 in range(0,21):
+        #if Save.count % 40 in range(0,4):
+            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
+            #layer_type = 'l'
+            a = matrix.A, layer_type, rank, itr
+            b = matrix.B, layer_type, rank, itr
+            kron_lr = Kron_lr2(a, b)
+            kron_lr.update_inv(1e-3)
+            grad_kron_lr = kron_lr.mvp(vec_weight=vec_weight, vec_bias=None, use_inv=True, inplace=False)
+
+            grad_kron_lr = grad_kron_lr.reshape((-1,1)).squeeze()
+            grad_kron = grad_kron.reshape((-1,1)).squeeze()
+
+            cos = torch.dot(grad_kron_lr,grad_kron)/(max(torch.dot(grad_kron_lr,grad_kron_lr)**0.5 * torch.dot(grad_kron,grad_kron)**0.5, 1e-8))
+
+            #with open('/users/tdubach/error/cosine_sim_mlp.txt', 'ab+') as fp:
+            with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
+                pickle.dump(cos, fp)
+
+
+            #norm = torch.norm(grad_kron-grad_kron_lr)/torch.norm(grad_kron)
+            norm = torch.linalg.vector_norm(grad_kron-grad_kron_lr)/torch.linalg.vector_norm(grad_kron)
+
+            #with open('/users/tdubach/error/norm_mlp.txt', 'ab+') as fp:
+            with open('/users/tdubach/error/norm.txt', 'ab+') as fp:
+                pickle.dump(norm, fp)
+
+
+        Save.count += 1
 
 
 class NaturalGradient:
@@ -182,7 +220,7 @@ class NaturalGradient:
         else:
             return '' + self._nvtx_tag
 
-    @nvtx.range('update_curvature')
+    #@nvtx.range('update_curvature')
     def update_curvature(self,
                          inputs=None,
                          targets=None,
@@ -317,7 +355,7 @@ class NaturalGradient:
                                      kron=kron,
                                      no_save=no_save)
 
-    @nvtx.range('update_inv')
+    #@nvtx.range('update_inv')
     def update_inv(self, damping=None, module_name=None, kron=None, zero_curvature=False, partition_aware=False):
         if kron is None:
             kron = ['A', 'B']
@@ -344,11 +382,11 @@ class NaturalGradient:
                 if shape == SHAPE_KRON:
                     for A_or_B in kron:
                         event += f'_{A_or_B}'
-                nvtx.range_push(event + self.nvtx_tag(name))
+                #nvtx.range_push(event + self.nvtx_tag(name))
                 if shape == SHAPE_KRON_LR:
                     for A_or_B in kron:
                         event += f'_{A_or_B}'
-                nvtx.range_push(event + self.nvtx_tag(name))
+                #nvtx.range_push(event + self.nvtx_tag(name))
 
                 if self.is_module_for_inv_and_precondition(module):
                     if shape == SHAPE_KRON:
@@ -372,7 +410,7 @@ class NaturalGradient:
                         else:
                             matrix.mul_(0)
 
-                nvtx.range_pop()
+                #nvtx.range_pop()
 
                 if module_name is not None:
                     break
@@ -384,7 +422,7 @@ class NaturalGradient:
                 with torch.no_grad():
                     fisher.mul_(0)
 
-    @nvtx.range('precondition')
+    #@nvtx.range('precondition')
     def precondition(self, vectors: ParamVector = None, grad_scale=None):
         if grad_scale is None:
             grad_scale = self.grad_scale
@@ -430,7 +468,13 @@ class NaturalGradient:
             vec_weight.data.mul_(grad_scale)
             if vec_bias is not None:
                 vec_bias.data.mul_(grad_scale)
-        matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
+
+        a = matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
+
+        #####################
+        #if isinstance(a, tuple): a = a[0]
+        #Save.save(matrix, vec_weight, vec_bias, a, self.rank, self.max_itr)
+        #####################
 
     def is_module_for_inv_and_precondition(self, module: nn.Module):
         if module not in self.modules_for_curvature:
@@ -444,7 +488,7 @@ class NaturalGradient:
             rank = dist.get_rank(self.sync_group)
             return module in module_partitions[rank]
 
-    @nvtx.range('sync_curvature')
+    #@nvtx.range('sync_curvature')
     def sync_curvature(self, module_name=None, kron=None, diag=None, with_grad=False, enabled=True, async_op=False):
         if not enabled:
             return
@@ -475,7 +519,7 @@ class NaturalGradient:
             self.all_gather_grad(async_op=async_op)
         self.all_reduce_no_curvature_grad(async_op=async_op)
 
-    @nvtx.range('reduce_scatter_curvature')
+    #@nvtx.range('reduce_scatter_curvature')
     def reduce_scatter_curvature(self, kron=None, diag=None, with_grad=False):
         module_partitions = self.module_partitions
         assert module_partitions is not None, 'module_partitions is not specified.'
@@ -490,7 +534,7 @@ class NaturalGradient:
                                                                      async_op=True)
         return handles
 
-    @nvtx.range('reduce_curvature')
+    #@nvtx.range('reduce_curvature')
     def reduce_curvature(self, module_name, kron=None, diag=None, with_grad=False):
         module_partitions = self.module_partitions
         assert module_partitions is not None, 'module_partitions is not specified.'
@@ -513,7 +557,7 @@ class NaturalGradient:
                                                          async_op=True)
         return handles
 
-    @nvtx.range('all_reduce_undivided_curvature')
+    #@nvtx.range('all_reduce_undivided_curvature')
     def all_reduce_undivided_curvature(self, module_name=None, kron=None, diag=None, with_grad=False):
         modules = []
         for name, module in self.named_modules_for_curvature:
@@ -553,11 +597,11 @@ class NaturalGradient:
             assert all(w_or_b in ['weight', 'bias'] for w_or_b in diag)
             return [['diag', w_or_b] for w_or_b in diag]
 
-    @nvtx.range('reduce_scatter_grad')
+    #@nvtx.range('reduce_scatter_grad')
     def reduce_scatter_grad(self, async_op=False):
         self._scatter_or_gather_grad('scatter', async_op=async_op)
 
-    @nvtx.range('all_gather_grad')
+    #@nvtx.range('all_gather_grad')
     def all_gather_grad(self, async_op=False):
         self._scatter_or_gather_grad('gather', async_op=async_op)
 
@@ -596,13 +640,13 @@ class NaturalGradient:
                     for j in range(world_size):
                         vector_to_parameters(tensor_list[j], grads_list[j])
 
-    @nvtx.range('all_reduce_undivided_grad')
+    #@nvtx.range('all_reduce_undivided_grad')
     def all_reduce_undivided_grad(self, async_op=False):
         assert dist.is_initialized()
         module_list = nn.ModuleList([m for m in self.modules_for_curvature if m not in self.partitioned_modules])
         self._all_reduce_grad(module_list, async_op=async_op)
 
-    @nvtx.range('all_reduce_no_curvature_grad')
+    #@nvtx.range('all_reduce_no_curvature_grad')
     def all_reduce_no_curvature_grad(self, async_op=False):
         module_list = nn.ModuleList([m for m in self.model.modules()
                                      if len(list(m.children())) == 0 and m not in self.modules_for_curvature])

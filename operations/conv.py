@@ -91,17 +91,19 @@ class Conv2d(Operation):
 
     @staticmethod
     def cov_kron_lr_A(module, in_data, rank, max_itr):
-        out_size = in_data.shape[-1]
-        m = in_data.transpose(0, 1).flatten(start_dim=1)
-        eig, vec = power_method(Kron_lr.kronvp_fn(m.T, diag=False), m.T.shape, 
-                            top_n=rank, max_itr=max_itr, device=m.get_device())
-        return eig.div(out_size), vec
+        return in_data.clone(), 'c', rank, max_itr
+        #out_size = in_data.shape[-1]
+        #m = in_data.transpose(0, 1).flatten(start_dim=1)
+        #eig, vec = power_method(Kron_lr.kronvp_fn(m.T, diag=False), m.T.shape, 
+        #                    top_n=rank, max_itr=max_itr, device=m.get_device())
+        #return eig.div(out_size), vec
 
     @staticmethod
     def cov_kron_lr_B(module, out_grads, rank, max_itr):
-        m = out_grads.transpose(0, 1).flatten(start_dim=1)  # c_out x n(out_size)
-        return *power_method(Kron_lr.kronvp_fn(m.T, diag=True), m.T.shape, 
-                             top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
+        return out_grads.clone(), 'c', rank, max_itr
+        #m = out_grads.transpose(0, 1).flatten(start_dim=1)  # c_out x n(out_size)
+        #return *power_method(Kron_lr.kronvp_fn(m.T, diag=True), m.T.shape, 
+        #                     top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
 
     @staticmethod
     def gram_A(module, in_data1, in_data2):
