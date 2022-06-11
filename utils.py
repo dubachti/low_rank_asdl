@@ -120,7 +120,7 @@ def power_method(mvp_fn,
 
     if top_n > min(shape): top_n = min(shape)
 
-    device = torch.device('cpu')
+    #device = torch.device('cpu')
 
     eigvals = []
     eigvecs = []

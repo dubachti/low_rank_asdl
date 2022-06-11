@@ -24,7 +24,7 @@ __all__ = [
     'UnitWiseNaturalGradient', 'DiagNaturalGradient', 'EmpiricalNaturalGradient'
 ]
 
-
+"""
 import pickle
 from asdfghjkl.symmatrix import Kron_lr2
 class Save:
@@ -33,9 +33,8 @@ class Save:
     @staticmethod
     def save(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
         if Save.count % 210 in range(0,21):
-        #if Save.count % 40 in range(0,4):
+        #if Save.count % 1 in range(0,4):
             layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
-            #layer_type = 'l'
             a = matrix.A, layer_type, rank, itr
             b = matrix.B, layer_type, rank, itr
             kron_lr = Kron_lr2(a, b)
@@ -45,23 +44,49 @@ class Save:
             grad_kron_lr = grad_kron_lr.reshape((-1,1)).squeeze()
             grad_kron = grad_kron.reshape((-1,1)).squeeze()
 
-            cos = torch.dot(grad_kron_lr,grad_kron)/(max(torch.dot(grad_kron_lr,grad_kron_lr)**0.5 * torch.dot(grad_kron,grad_kron)**0.5, 1e-8))
-
+            cos = torch.dot(grad_kron_lr,grad_kron)/(max(torch.dot(grad_kron_lr,grad_kron_lr)**0.5 * torch.dot(grad_kron,grad_kron)**0.5, 1e-9))
+            
             #with open('/users/tdubach/error/cosine_sim_mlp.txt', 'ab+') as fp:
-            with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
-                pickle.dump(cos, fp)
+            #with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
 
+"""
+            #with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
+            #with open('final_plots/layerwise_err/data_b_diag_sgd/cosine_sim.txt', 'ab+') as fp:
+            #    pickle.dump(cos, fp)
+"""
+            
 
             #norm = torch.norm(grad_kron-grad_kron_lr)/torch.norm(grad_kron)
-            norm = torch.linalg.vector_norm(grad_kron-grad_kron_lr)/torch.linalg.vector_norm(grad_kron)
+            #norm = torch.linalg.vector_norm(grad_kron-grad_kron_lr)/torch.linalg.vector_norm(grad_kron)
+            kron_norm = torch.linalg.vector_norm(grad_kron)
+            kron_lr_norm  = torch.linalg.vector_norm(grad_kron_lr)
 
-            #with open('/users/tdubach/error/norm_mlp.txt', 'ab+') as fp:
-            with open('/users/tdubach/error/norm.txt', 'ab+') as fp:
-                pickle.dump(norm, fp)
+            print(kron_lr_norm, kron_norm, cos)
 
+            norm = torch.abs(kron_norm-kron_lr_norm)/kron_norm
+
+"""
+            #with open('/users/tdubach/error/norm.txt', 'ab+') as fp:
+            #with open('final_plots/layerwise_err/data_b_diag_sgd/norm.txt', 'ab+') as fp:
+            #    pickle.dump(norm, fp)
+"""
 
         Save.count += 1
+"""
+"""
+    @staticmethod
+    def save_facs(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
+        if Save.count % 4200 in range(0,21):
+            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
 
+            with open('/users/tdubach/error/kron_a.txt', 'ab+') as fp:
+                pickle.dump(matrix.A, fp)
+
+            with open('/users/tdubach/error/kron_b.txt', 'ab+') as fp:
+                pickle.dump(matrix.B, fp)
+
+        Save.count += 1
+"""
 
 class NaturalGradient:
     """
@@ -469,11 +494,14 @@ class NaturalGradient:
             if vec_bias is not None:
                 vec_bias.data.mul_(grad_scale)
 
-        a = matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
+        #weight = vec_weight.clone()
+        #a = matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
+        matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
 
         #####################
         #if isinstance(a, tuple): a = a[0]
-        #Save.save(matrix, vec_weight, vec_bias, a, self.rank, self.max_itr)
+        #Save.save_facs(matrix, vec_weight, vec_bias, a, self.rank, self.max_itr)
+        #Save.save(matrix, weight, vec_bias, a, self.rank, self.max_itr)
         #####################
 
     def is_module_for_inv_and_precondition(self, module: nn.Module):

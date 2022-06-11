@@ -519,48 +519,29 @@ class Kron_lr:
         return self
 
 
-    ###
     def con_cov_kron_lr_A(self, in_data, rank, max_itr):
         out_size = in_data.shape[-1]
         m = in_data.transpose(0, 1).flatten(start_dim=1)
         self.A_trace = torch.sum(m**2)
-
         m = m.T
-
         eig, vec = power_method(Kron_lr.kronvp_fn(m.to('cpu'), diag=False), m.shape, 
                             top_n=rank, max_itr=max_itr, device=m.get_device())
         return eig.div(out_size), vec
 
     def con_cov_kron_lr_B(self, out_grads, rank, max_itr):
         m = out_grads.transpose(0, 1).flatten(start_dim=1)
-        self.B_trace = torch.sum(m**2)
-        #return *power_method(Kron_lr.kronvp_fn(m.T.to('cpu'), diag=True), m.T.shape, 
-        #                     top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
-        
-        #m = out_grads.transpose(0, 1).flatten(start_dim=1)
-
-        m = m.T
-
-        return power_method(Kron_lr.kronvp_fn(m.to('cpu'), diag=False), m.shape, 
-                             top_n=rank, max_itr=max_itr, device=m.get_device())
+        return *power_method(Kron_lr.kronvp_fn(m.T.to('cpu'), diag=True), m.T.shape, 
+                             top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
 
     def lin_cov_kron_lr_A(self, in_data, rank, max_itr):
         self.A_trace = torch.sum(in_data**2)
-
-
         return power_method(Kron_lr.kronvp_fn(in_data.to('cpu'), diag=False), in_data.shape, 
                             top_n=rank, max_itr=max_itr, device=in_data.get_device())
 
     def lin_cov_kron_lr_B(self, out_grads, rank, max_itr):
-        self.B_trace = torch.sum(out_grads**2)
-        #return *power_method(Kron_lr.kronvp_fn(out_grads.to('cpu'), diag=True), out_grads.shape, 
-        #                    top_n=rank, max_itr=max_itr, device=out_grads.get_device()), torch.sum(out_grads**2, dim=0) # = eigs, vecs, diag
-        
-        
+        return *power_method(Kron_lr.kronvp_fn(out_grads.to('cpu'), diag=True), out_grads.shape, 
+                            top_n=rank, max_itr=max_itr, device=out_grads.get_device()), torch.sum(out_grads**2, dim=0) # = eigs, vecs, diag
 
-        return power_method(Kron_lr.kronvp_fn(out_grads.to('cpu'), diag=False), out_grads.shape, 
-                            top_n=rank, max_itr=max_itr, device=out_grads.get_device()) # = eigs, vecs, diag
-    ###
 
     #@nvtx.range('update_inv')
     def update_inv(self, damping=_default_damping, calc_A_inv=True, calc_B_inv=True, eps=1e-7):
@@ -570,21 +551,17 @@ class Kron_lr:
         assert self.layer_type in ['l', 'c'], f'layer type {self.layer_type} not possible'
         if self.layer_type == 'c':
             eig_a, vec_a = self.con_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            #eig_b, vec_b, diag_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            eig_b, vec_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            ##self.B_trace = torch.sum(diag_b)
+            eig_b, vec_b, diag_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
+            self.B_trace = torch.sum(diag_b)
         else:
             eig_a, vec_a = self.lin_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            #eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            eig_b, vec_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            ##self.B_trace = torch.sum(diag_b)
+            eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
+            self.B_trace = torch.sum(diag_b)
 
         if self.has_A and self.has_B:
             eps = torch.tensor(eps, device=device)
             A_eig_mean = torch.max(self.A_trace / self.A_dim, eps)
             B_eig_mean = torch.max(self.B_trace / self.B_dim, eps)
-            #A_eig_mean = torch.max(torch.sum(eig_a) / self.A_dim, eps)
-            #B_eig_mean = torch.max(sum(diag_b) / self.B_dim, eps)
             pi = torch.sqrt(A_eig_mean / B_eig_mean)
             r = torch.tensor(damping**0.5, device=device)
             damping_A = max(r * pi, eps)
@@ -600,11 +577,8 @@ class Kron_lr:
         if calc_B_inv:
             assert self.has_B
             if not torch.all(self.B == 0):
-                #self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, diag=diag_b,
-                #                                  damping=damping_B, device=device)
-                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b,
+                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, diag=diag_b,
                                                   damping=damping_B, device=device)
-
 
     # for power-iteration
     #@nvtx.range('kronvp_fn')
@@ -648,7 +622,7 @@ class Kron_lr:
             return mvp_w, mvp_b
         return mvp_w
 
-
+"""
 class Kron_lr2:
     def __init__(self, A, B):
         self.A = A[0] # A
@@ -718,16 +692,18 @@ class Kron_lr2:
         return eig, vec
 
     def con_cov_kron_lr_B(self, b, rank, max_itr):
-        return power_method(Kron_lr.kronvp_fn(b.T.to('cpu'), diag=False), b.T.shape, 
-                             top_n=rank, max_itr=max_itr, device=b.get_device())
+        #return power_method(Kron_lr.kronvp_fn(b.T.to('cpu'), diag=False), b.T.shape, 
+        #                     top_n=rank, max_itr=max_itr, device=b.get_device())
+        return *power_method(Kron_lr.kronvp_fn(b.T.to('cpu'), diag=True), b.T.shape, 
+                             top_n=rank, max_itr=max_itr, device=b.get_device()), b.trace()
 
     def lin_cov_kron_lr_A(self, a, rank, max_itr):
         return power_method(Kron_lr.kronvp_fn(a.to('cpu'), diag=False), a.shape, 
                             top_n=rank, max_itr=max_itr, device=a.get_device()) # = eigs, vecs
 
     def lin_cov_kron_lr_B(self, b, rank, max_itr):
-        return power_method(Kron_lr.kronvp_fn(b.to('cpu'), diag=False), b.shape, 
-                            top_n=rank, max_itr=max_itr, device=b.get_device()) # = eigs, vecs, diag
+        return *power_method(Kron_lr.kronvp_fn(b.to('cpu'), diag=True), b.shape, 
+                            top_n=rank, max_itr=max_itr, device=b.get_device()), b.trace()
     ###
 
     #@nvtx.range('update_inv')
@@ -738,10 +714,10 @@ class Kron_lr2:
         assert self.layer_type in ['l', 'c'], f'layer type {self.layer_type} not possible'
         if self.layer_type == 'c':
             eig_a, vec_a = self.con_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
+            eig_b, vec_b, diag_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
         else:
             eig_a, vec_a = self.lin_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
+            eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
 
         if self.has_A and self.has_B:
             eps = torch.tensor(eps, device=device)
@@ -763,7 +739,7 @@ class Kron_lr2:
         if calc_B_inv:
             assert self.has_B
             if not torch.all(self.B == 0):
-                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, ## maybe yess diag maybe no
+                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, diag=diag_b,
                                                   damping=damping_B, device=device)
 
 
@@ -799,7 +775,7 @@ class Kron_lr2:
                 vec_bias.copy_(mvp_b)
             return mvp_w, mvp_b
         return mvp_w
-
+"""
 class Diag:
     def __init__(self, weight=None, bias=None):
         self.weight = weight

@@ -180,10 +180,6 @@ class Operation:
                 continue
             if op_name == OP_COV_KRON:
                 A = self.cov_kron_A(module, in_data)
-
-                #A_lr = self.cov_kron_lr_A(module, in_data, rank=rank, max_itr=max_itr)
-                #Save.save(A, A_lr)
-
                 self.accumulate_result(A, OP_COV_KRON, 'A')
             elif op_name == OP_COV_KRON_LR:
                 A = self.cov_kron_lr_A(module, in_data, rank=rank, max_itr=max_itr)
