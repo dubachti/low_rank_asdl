@@ -5,7 +5,7 @@ from torch import eig, nn
 from torch.nn import functional as F
 from torch.utils.data import BatchSampler, Subset, DataLoader
 from typing import List, Callable
-#from torch.cuda import nvtx
+from torch.cuda import nvtx
 
 _REQUIRES_GRAD_ATTR = '_original_requires_grad'
 
@@ -135,7 +135,8 @@ def power_method(mvp_fn,
         # power iteration
         for j in range(max_itr):
             vec = _orthonormal(vec, eigvecs)
-            Mv = _mvp(mvp_fn, vec, random_seed=random_seed)
+            #Mv = _mvp(mvp_fn, vec, random_seed=random_seed)
+            Mv = _mvp(mvp_fn, vec.to(device), random_seed=random_seed).to('cpu')
             eigval = Mv.dot(vec)
             if j > 0:
                 diff = torch.abs(eigval - last_eigval) / (torch.abs(last_eigval) + 1e-5)

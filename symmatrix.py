@@ -465,14 +465,11 @@ class Kron:
 
 class Kron_lr:
     def __init__(self, A, B):
-        self.A = A[0] # in_data
-        self.B = B[0] # out_grads
-        self.layer_type = A[1]
-        self.rank = A[2]
-        self.max_itr = A[3]
+        self.A = A # in_data -> [eig, vec]
+        self.B = B # out_grads -> [eig, vec, diag]
 
-        self.A_trace = None
-        self.B_trace = None
+        self._A_trace = None
+        self._B_trace = None
 
         self.A_inv = None
         self.B_inv = None
@@ -497,66 +494,44 @@ class Kron_lr:
     @property
     def A_dim(self):
         if self._A_dim is None and self.A is not None:
-            self._A_dim = self.A.shape[1]
+            self._A_dim = self.A[1].shape[1]
         return self._A_dim
 
     @property
     def B_dim(self):
         if self._B_dim is None and self.B is not None:
-            self._B_dim = self.B.shape[1]
+            self._B_dim = self.B[1].shape[1]
         return self._B_dim
 
+    @property
+    def A_trace(self):
+        if self._A_trace is None and self.A is not None:
+            self._A_trace = torch.sum(self.A[0])
+        return self._A_trace
+
+    @property
+    def B_trace(self):
+        if self._B_trace is None and self.B is not None:
+            self._B_trace = torch.sum(self.B[2])
+        return self._B_trace
+
     def device(self):
-        if self.A.is_cuda:
-            return self.A.get_device()
+        if self.A[0].is_cuda:
+            return self.A[0].get_device()
         return torch.device('cpu')
 
     def mul_(self, value):
         if self.has_A:
-            self.A.mul_(value**0.5)
+            self.A[0].mul_(value)
         else:
-            self.B.mul_(value**0.5)
+            self.B[0].mul_(value)
         return self
-
-
-    def con_cov_kron_lr_A(self, in_data, rank, max_itr):
-        out_size = in_data.shape[-1]
-        m = in_data.transpose(0, 1).flatten(start_dim=1)
-        self.A_trace = torch.sum(m**2)
-        m = m.T
-        eig, vec = power_method(Kron_lr.kronvp_fn(m.to('cpu'), diag=False), m.shape, 
-                            top_n=rank, max_itr=max_itr, device=m.get_device())
-        return eig.div(out_size), vec
-
-    def con_cov_kron_lr_B(self, out_grads, rank, max_itr):
-        m = out_grads.transpose(0, 1).flatten(start_dim=1)
-        return *power_method(Kron_lr.kronvp_fn(m.T.to('cpu'), diag=True), m.T.shape, 
-                             top_n=rank, max_itr=max_itr, device=m.get_device()), torch.sum(m**2, dim=1)
-
-    def lin_cov_kron_lr_A(self, in_data, rank, max_itr):
-        self.A_trace = torch.sum(in_data**2)
-        return power_method(Kron_lr.kronvp_fn(in_data.to('cpu'), diag=False), in_data.shape, 
-                            top_n=rank, max_itr=max_itr, device=in_data.get_device())
-
-    def lin_cov_kron_lr_B(self, out_grads, rank, max_itr):
-        return *power_method(Kron_lr.kronvp_fn(out_grads.to('cpu'), diag=True), out_grads.shape, 
-                            top_n=rank, max_itr=max_itr, device=out_grads.get_device()), torch.sum(out_grads**2, dim=0) # = eigs, vecs, diag
 
 
     #@nvtx.range('update_inv')
     def update_inv(self, damping=_default_damping, calc_A_inv=True, calc_B_inv=True, eps=1e-7):
         assert self.has_data
         device = self.device()
-
-        assert self.layer_type in ['l', 'c'], f'layer type {self.layer_type} not possible'
-        if self.layer_type == 'c':
-            eig_a, vec_a = self.con_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b, diag_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            self.B_trace = torch.sum(diag_b)
-        else:
-            eig_a, vec_a = self.lin_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-            self.B_trace = torch.sum(diag_b)
 
         if self.has_A and self.has_B:
             eps = torch.tensor(eps, device=device)
@@ -571,14 +546,14 @@ class Kron_lr:
 
         if calc_A_inv:
             assert self.has_A
-            if not torch.all(self.A == 0):
-                self.A_inv = sherman_morrison_inv(eig=eig_a, vec=vec_a, damping=damping_A,
-                                                  device=device)
+            #if not (1 in [torch.all(a)==0 for a in self.A]):
+            self.A_inv = sherman_morrison_inv(eig=self.A[0], vec=self.A[1], damping=damping_A,
+                                              device=device)
         if calc_B_inv:
             assert self.has_B
-            if not torch.all(self.B == 0):
-                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, diag=diag_b,
-                                                  damping=damping_B, device=device)
+            #if not torch.all(self.B[0]==0) or not (1 in [torch.all(a)==0 for a in self.B[:1]]):
+            self.B_inv = sherman_morrison_inv(eig=self.B[0], vec=self.B[1], diag=self.B[2],
+                                              damping=damping_B, device=device)
 
     # for power-iteration
     #@nvtx.range('kronvp_fn')
@@ -600,12 +575,12 @@ class Kron_lr:
 
             mvp_w = torch.matmul(x, mat_A).view_as(vec_weight)
         else:
+            assert 1==0, 'huge error: not implemented yet'
             eig_a, vec_a = self.A
             #eig_b, vec_b, diag_b = self.B
             eig_b, vec_b  = self.B
             #bvp = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_weight_2d)) + (diag_b * vec_weight_2d.T).T
             
-            assert 1==0, 'huge error: not implemented yet'
             #####bvp = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_weight_2d)) + (diag_b * vec_weight_2d.T).T
             mvp_w = torch.matmul(torch.matmul(bvp, (vec_a * eig_a).T), vec_a).view_as(vec_weight)
         if inplace:
@@ -614,168 +589,14 @@ class Kron_lr:
             if use_inv:
                 mvp_b = mat_B.mv(vec_bias)
             else:
-                #mvp_b = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_bias)) + (diag_b * vec_bias.T).T
                 assert 1==0, 'huge error: not implemented yet'
                 #mvp_b = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_bias)) + (diag_b * vec_bias.T).T
+                #mvp_b = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_bias)) + (diag_b * vec_bias.T).T
             if inplace:
                 vec_bias.copy_(mvp_b)
             return mvp_w, mvp_b
         return mvp_w
 
-"""
-class Kron_lr2:
-    def __init__(self, A, B):
-        self.A = A[0] # A
-        self.B = B[0] # B
-        self.layer_type = A[1]
-        self.rank = A[2]
-        self.max_itr = A[3]
-
-        self.A_inv = None
-        self.B_inv = None
-        self._A_dim = self._B_dim = None
-
-    @property
-    def data(self):
-        return [self.A, self.B]
-
-    @property
-    def has_data(self):
-        return self.has_A or self.has_B
-
-    @property
-    def has_A(self):
-        return self.A is not None
-
-    @property
-    def has_B(self):
-        return self.B is not None
-
-    @property
-    def A_dim(self):
-        if self._A_dim is None and self.A is not None:
-            #self._A_dim = self.A[1].shape[1]
-            self._A_dim = self.A.shape[1]
-        return self._A_dim
-
-    @property
-    def B_dim(self):
-        if self._B_dim is None and self.B is not None:
-            #self._B_dim = self.B[1].shape[1]
-            self._B_dim = self.B.shape[1]
-        return self._B_dim
-
-    def device(self):
-        #if self.A[0].is_cuda:
-        #    return self.A[0].get_device()
-        if self.A.is_cuda:
-            return self.A.get_device()
-        return torch.device('cpu')
-
-    def A_trace(self):
-        return torch.diag(self.A).sum().item()
-        
-    def B_trace(self):
-        return torch.diag(self.B).sum().item()
-
-    def mul_(self, value):
-        if self.has_A:
-            self.A.mul_(value)
-        if self.has_B:
-            self.B.mul_(value)
-        return self
-
-    ###
-    def con_cov_kron_lr_A(self, a, rank, max_itr):
-        eig, vec = power_method(Kron_lr.kronvp_fn(a.T.to('cpu'), diag=False), a.T.shape, 
-                            top_n=rank, max_itr=max_itr, device=a.get_device())
-        return eig, vec
-
-    def con_cov_kron_lr_B(self, b, rank, max_itr):
-        #return power_method(Kron_lr.kronvp_fn(b.T.to('cpu'), diag=False), b.T.shape, 
-        #                     top_n=rank, max_itr=max_itr, device=b.get_device())
-        return *power_method(Kron_lr.kronvp_fn(b.T.to('cpu'), diag=True), b.T.shape, 
-                             top_n=rank, max_itr=max_itr, device=b.get_device()), b.trace()
-
-    def lin_cov_kron_lr_A(self, a, rank, max_itr):
-        return power_method(Kron_lr.kronvp_fn(a.to('cpu'), diag=False), a.shape, 
-                            top_n=rank, max_itr=max_itr, device=a.get_device()) # = eigs, vecs
-
-    def lin_cov_kron_lr_B(self, b, rank, max_itr):
-        return *power_method(Kron_lr.kronvp_fn(b.to('cpu'), diag=True), b.shape, 
-                            top_n=rank, max_itr=max_itr, device=b.get_device()), b.trace()
-    ###
-
-    #@nvtx.range('update_inv')
-    def update_inv(self, damping=_default_damping, calc_A_inv=True, calc_B_inv=True, eps=1e-7):
-        assert self.has_data
-        device = self.device()
-
-        assert self.layer_type in ['l', 'c'], f'layer type {self.layer_type} not possible'
-        if self.layer_type == 'c':
-            eig_a, vec_a = self.con_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b, diag_b = self.con_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-        else:
-            eig_a, vec_a = self.lin_cov_kron_lr_A(self.A, self.rank, self.max_itr)
-            eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
-
-        if self.has_A and self.has_B:
-            eps = torch.tensor(eps, device=device)
-            A_eig_mean = self.A_trace() / self.A_dim
-            B_eig_mean = self.B_trace() / self.B_dim
-            pi = (A_eig_mean / B_eig_mean)**0.5
-            r = torch.tensor(damping**0.5, device=device)
-            damping_A = max(r * pi, eps)
-            damping_B = max(r / pi, eps)
-        else:
-            damping_A = damping_B = damping
-    
-
-        if calc_A_inv:
-            assert self.has_A
-            if not torch.all(self.A == 0):
-                self.A_inv = sherman_morrison_inv(eig=eig_a, vec=vec_a, damping=damping_A,
-                                                  device=device)
-        if calc_B_inv:
-            assert self.has_B
-            if not torch.all(self.B == 0):
-                self.B_inv = sherman_morrison_inv(eig=eig_b, vec=vec_b, diag=diag_b,
-                                                  damping=damping_B, device=device)
-
-
-    # for power-iteration
-    #@nvtx.range('kronvp_fn')
-    def kronvp_fn(U: torch.Tensor,
-                diag: bool = False):
-        if not diag:
-            return lambda v: torch.matmul(U, v)
-        else:
-            d = torch.diag(U)
-            return lambda v: torch.matmul(U, v) -  torch.mul(d,v)
-
-    def mvp(self, vec_weight, vec_bias=None, use_inv=False, inplace=False):
-        vec_weight_2d = vec_weight.view(self.B_dim, -1)
-        if use_inv:
-            mat_A = self.A_inv
-            mat_B = self.B_inv
-            mvp_w = torch.matmul(torch.matmul(mat_B, vec_weight_2d), mat_A).view_as(vec_weight)
-        else:
-            eig_a, vec_a, = self.A
-            eig_b, vec_b, diag_b = self.B
-            bvp = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_weight_2d)) + (diag_b * vec_weight_2d.T).T
-            mvp_w = torch.matmul(torch.matmul(bvp, (vec_a * eig_a).T), vec_a).view_as(vec_weight)
-        if inplace:
-            vec_weight.copy_(mvp_w)
-        if vec_bias is not None:
-            if use_inv:
-                mvp_b = mat_B.mv(vec_bias)
-            else:
-                mvp_b = torch.matmul((vec_b * eig_b).T, torch.matmul(vec_b, vec_bias)) + (diag_b * vec_bias.T).T
-            if inplace:
-                vec_bias.copy_(mvp_b)
-            return mvp_w, mvp_b
-        return mvp_w
-"""
 class Diag:
     def __init__(self, weight=None, bias=None):
         self.weight = weight

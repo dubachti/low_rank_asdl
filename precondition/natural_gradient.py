@@ -24,70 +24,6 @@ __all__ = [
     'UnitWiseNaturalGradient', 'DiagNaturalGradient', 'EmpiricalNaturalGradient'
 ]
 
-"""
-import pickle
-from asdfghjkl.symmatrix import Kron_lr2
-class Save:
-    count = 0
-
-    @staticmethod
-    def save(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
-        if Save.count % 210 in range(0,21):
-        #if Save.count % 1 in range(0,4):
-            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
-            a = matrix.A, layer_type, rank, itr
-            b = matrix.B, layer_type, rank, itr
-            kron_lr = Kron_lr2(a, b)
-            kron_lr.update_inv(1e-3)
-            grad_kron_lr = kron_lr.mvp(vec_weight=vec_weight, vec_bias=None, use_inv=True, inplace=False)
-
-            grad_kron_lr = grad_kron_lr.reshape((-1,1)).squeeze()
-            grad_kron = grad_kron.reshape((-1,1)).squeeze()
-
-            cos = torch.dot(grad_kron_lr,grad_kron)/(max(torch.dot(grad_kron_lr,grad_kron_lr)**0.5 * torch.dot(grad_kron,grad_kron)**0.5, 1e-9))
-            
-            #with open('/users/tdubach/error/cosine_sim_mlp.txt', 'ab+') as fp:
-            #with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
-
-"""
-            #with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
-            #with open('final_plots/layerwise_err/data_b_diag_sgd/cosine_sim.txt', 'ab+') as fp:
-            #    pickle.dump(cos, fp)
-"""
-            
-
-            #norm = torch.norm(grad_kron-grad_kron_lr)/torch.norm(grad_kron)
-            #norm = torch.linalg.vector_norm(grad_kron-grad_kron_lr)/torch.linalg.vector_norm(grad_kron)
-            kron_norm = torch.linalg.vector_norm(grad_kron)
-            kron_lr_norm  = torch.linalg.vector_norm(grad_kron_lr)
-
-            print(kron_lr_norm, kron_norm, cos)
-
-            norm = torch.abs(kron_norm-kron_lr_norm)/kron_norm
-
-"""
-            #with open('/users/tdubach/error/norm.txt', 'ab+') as fp:
-            #with open('final_plots/layerwise_err/data_b_diag_sgd/norm.txt', 'ab+') as fp:
-            #    pickle.dump(norm, fp)
-"""
-
-        Save.count += 1
-"""
-"""
-    @staticmethod
-    def save_facs(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
-        if Save.count % 4200 in range(0,21):
-            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
-
-            with open('/users/tdubach/error/kron_a.txt', 'ab+') as fp:
-                pickle.dump(matrix.A, fp)
-
-            with open('/users/tdubach/error/kron_b.txt', 'ab+') as fp:
-                pickle.dump(matrix.B, fp)
-
-        Save.count += 1
-"""
-
 class NaturalGradient:
     """
     Args:
@@ -103,7 +39,7 @@ class NaturalGradient:
         *,
         damping=1e-5,
         rank=1,
-        max_itr=1, 
+        max_itr=10, 
         ema_decay=_invalid_ema_decay,
         grad_scale=1.,
         ignore_modules=None,
