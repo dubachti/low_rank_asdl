@@ -81,8 +81,8 @@ class Linear(Operation):
 
     @staticmethod
     def cov_kron_lr_A(module, in_data, rank, max_itr):
-        return *power_method(Kron_lr.kronvp_fn(in_data, diag=True), in_data.shape, 
-                            top_n=rank, max_itr=max_itr, device=in_data.get_device()), torch.sum(in_data**2, dim=0) # = eigs, vecs, diag
+        return power_method(Kron_lr.kronvp_fn(in_data, diag=False), in_data.shape, 
+                            top_n=rank, max_itr=max_itr, device=in_data.get_device()) # = eigs, vecs, diag
 
     @staticmethod
     def cov_kron_lr_B(module, out_grads, rank, max_itr):

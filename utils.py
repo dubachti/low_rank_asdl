@@ -146,7 +146,7 @@ def power_method(mvp_fn,
             vec = Mv
 
         ####
-        #with open(f'iterations_{max_itr}.txt', 'a+') as f:
+        #with open('/users/tdubach/count_itr/iterations_count.txt', 'a+') as f:
         #    f.write(f'{j+1} \n')
         ####
 

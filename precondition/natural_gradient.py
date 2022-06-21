@@ -36,7 +36,7 @@ class Save:
             a = matrix.A, layer_type, rank, itr
             b = matrix.B, layer_type, rank, itr
             kron_lr = Kron_lr2(a, b)
-            kron_lr.update_inv(1e-3)
+            kron_lr.update_inv(1e-2)
             grad_kron_lr = kron_lr.mvp(vec_weight=vec_weight, vec_bias=None, use_inv=True, inplace=False)
             grad_kron_lr = grad_kron_lr.reshape((-1,1)).squeeze()
             grad_kron = grad_kron.reshape((-1,1)).squeeze()

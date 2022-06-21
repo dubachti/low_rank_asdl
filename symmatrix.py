@@ -465,7 +465,7 @@ class Kron:
 
 class Kron_lr:
     def __init__(self, A, B):
-        self.A = A # in_data -> [eig, vec, diag]
+        self.A = A # in_data -> [eig, vec]
         self.B = B # out_grads -> [eig, vec, diag]
 
         self._A_trace = None
@@ -506,7 +506,8 @@ class Kron_lr:
     @property
     def A_trace(self):
         if self._A_trace is None and self.A is not None:
-            self._A_trace = torch.sum(self.A[2])
+            #self._A_trace = torch.sum(self.A[2])
+            self._A_trace = torch.sum(self.A[0])
         return self._A_trace
 
     @property
@@ -546,12 +547,10 @@ class Kron_lr:
 
         if calc_A_inv:
             assert self.has_A
-            #if not (1 in [torch.all(a)==0 for a in self.A]):
-            self.A_inv = sherman_morrison_inv(eig=self.A[0], vec=self.A[1], diag=self.A[2],
+            self.A_inv = sherman_morrison_inv(eig=self.A[0], vec=self.A[1], #diag=self.A[2],
                                               damping=damping_A, device=device)
         if calc_B_inv:
             assert self.has_B
-            #if not torch.all(self.B[0]==0) or not (1 in [torch.all(a)==0 for a in self.B[:1]]):
             self.B_inv = sherman_morrison_inv(eig=self.B[0], vec=self.B[1], diag=self.B[2],
                                               damping=damping_B, device=device)
 
@@ -597,7 +596,7 @@ class Kron_lr:
             return mvp_w, mvp_b
         return mvp_w
 
-"""
+
 class Kron_lr2:
     def __init__(self, A, B):
         self.A = A[0] # A
@@ -676,8 +675,8 @@ class Kron_lr2:
             eig_b, vec_b, diag_b = self.lin_cov_kron_lr_B(self.B, self.rank, self.max_itr)
         if self.has_A and self.has_B:
             eps = torch.tensor(eps, device=device)
-            A_eig_mean = self.A_trace() / self.A_dim
-            #A_eig_mean = torch.sum(eig_a) / self.A_dim
+            #A_eig_mean = self.A_trace() / self.A_dim
+            A_eig_mean = torch.sum(eig_a) / self.A_dim
             B_eig_mean = self.B_trace() / self.B_dim
             pi = (A_eig_mean / B_eig_mean)**0.5
             r = torch.tensor(damping**0.5, device=device)
@@ -727,7 +726,7 @@ class Kron_lr2:
                 vec_bias.copy_(mvp_b)
             return mvp_w, mvp_b
         return mvp_w
-"""
+
 
 
 class Diag:
