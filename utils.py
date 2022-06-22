@@ -87,7 +87,7 @@ def cholesky_inv(X, damping=1e-7):
     diag -= damping
     return torch.cholesky_inverse(u)
 
-#@nvtx.range('sherman_morrison_inv')
+@nvtx.range('sherman_morrison_inv')
 def sherman_morrison_inv(eig: torch.Tensor,
                          vec: torch.Tensor,
                          damping: torch.Tensor,
@@ -106,7 +106,7 @@ def sherman_morrison_inv(eig: torch.Tensor,
         inv = inv - (top/bot)
     return inv
 
-#@nvtx.range('power_method')
+@nvtx.range('power_method')
 def power_method(mvp_fn,
                 shape,
                 top_n,
@@ -155,7 +155,7 @@ def power_method(mvp_fn,
     
     return torch.tensor(eigvals, device=device), torch.stack(eigvecs).to(device)
 
-#@nvtx.range('_mvp')
+@nvtx.range('_mvp')
 def _mvp(mvp_fn: Callable[[torch.Tensor], torch.Tensor],
         vec: torch.Tensor,
         random_seed=None,
@@ -168,7 +168,7 @@ def _mvp(mvp_fn: Callable[[torch.Tensor], torch.Tensor],
         Mv.add_(vec, alpha=damping)
     return Mv
 
-#@nvtx.range('_orthonotmal')
+@nvtx.range('_orthonotmal')
 def _orthonormal(w: torch.Tensor, v_list: List[torch.Tensor]) -> torch.Tensor:
     for v in v_list:
         w = w.add(v, alpha=-w.dot(v))

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from .utils import cholesky_inv, sherman_morrison_inv, power_method
 from .vector import ParamVector
-#from torch.cuda import nvtx
+from torch.cuda import nvtx
 
 __all__ = [
     'matrix_to_tril',
@@ -529,7 +529,7 @@ class Kron_lr:
         return self
 
 
-    #@nvtx.range('update_inv')
+    @nvtx.range('update_inv')
     def update_inv(self, damping=_default_damping, calc_A_inv=True, calc_B_inv=True, eps=1e-8):
         assert self.has_data
         device = self.device()
@@ -555,7 +555,7 @@ class Kron_lr:
                                               damping=damping_B, device=device)
 
     # for power-iteration
-    #@nvtx.range('kronvp_fn')
+    @nvtx.range('kronvp_fn')
     def kronvp_fn(U: torch.Tensor,
                 diag: bool = False):
         if not diag:
@@ -596,7 +596,7 @@ class Kron_lr:
             return mvp_w, mvp_b
         return mvp_w
 
-
+"""
 class Kron_lr2:
     def __init__(self, A, B):
         self.A = A[0] # A
@@ -726,7 +726,7 @@ class Kron_lr2:
                 vec_bias.copy_(mvp_b)
             return mvp_w, mvp_b
         return mvp_w
-
+"""
 
 
 class Diag:
