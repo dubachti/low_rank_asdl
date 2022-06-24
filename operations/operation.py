@@ -103,10 +103,12 @@ class Operation:
     def clear_results(self):
         self._op_results = {}
 
-    def forward_post_process(self, in_data: torch.Tensor, out_data: torch.Tensor, rank=1, max_itr=1):
+    def forward_post_process(self, in_data: torch.Tensor, out_data: torch.Tensor, rank=1, max_itr=1, new_curvature=True):
+
         module = self._module
         op_names = self._op_names
 
+        if not new_curvature: return
         if any(op_name in FWD_OPS for op_name in op_names):
             in_data = self.preprocess_in_data(module, in_data, out_data)
             if OP_SAVE_INPUTS in op_names:
@@ -136,10 +138,11 @@ class Operation:
             elif op_name == OP_RFIM_SOFTMAX:
                 self.accumulate_result(self.rfim_softmax(module, in_data, out_data), OP_RFIM_SOFTMAX)
 
-    def backward_pre_process(self, in_data, out_data, out_grads, vector: torch.Tensor = None, rank=1, max_itr=1):
+    def backward_pre_process(self, in_data, out_data, out_grads, vector: torch.Tensor = None, rank=1, max_itr=1, new_curvature=True):
         module = self._module
         op_names = self._op_names
 
+        if not new_curvature: return
         if any(op_name in BWD_OPS for op_name in op_names):
             out_grads = self.preprocess_out_grads(module, out_grads)
             if OP_SAVE_OUTGRADS in op_names:
@@ -352,12 +355,12 @@ class OperationContext:
         for key in keys:
             del self._operations[key]
 
-    def call_operations_in_forward(self, module, in_data, out_data, rank=1, max_itr=1):
-        self.get_operation(module).forward_post_process(in_data, out_data, rank=rank, max_itr=max_itr)
+    def call_operations_in_forward(self, module, in_data, out_data, rank=1, max_itr=1, new_curvature=True):
+        self.get_operation(module).forward_post_process(in_data, out_data, rank=rank, max_itr=max_itr, new_curvature=new_curvature)
 
-    def call_operations_in_backward(self, module, in_data, out_data, out_grads, rank=1, max_itr=1):
+    def call_operations_in_backward(self, module, in_data, out_data, out_grads, rank=1, max_itr=1, new_curvature=True):
         vector = self.get_vectors_by_module(module, flatten=True)
-        self.get_operation(module).backward_pre_process(in_data, out_data, out_grads, vector, rank=rank, max_itr=max_itr)
+        self.get_operation(module).backward_pre_process(in_data, out_data, out_grads, vector, rank=rank, max_itr=max_itr, new_curvature=new_curvature)
 
     def get_result(self, module, *keys, pop=False, default=None):
         try:

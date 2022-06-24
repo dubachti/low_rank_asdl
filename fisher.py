@@ -90,7 +90,8 @@ class FisherManager(MatrixManager):
                          scale=1.,
                          stream: Stream = None,
                          rank = 1, 
-                         max_itr = 1):
+                         max_itr = 1,
+                         new_curvature=True):
         model = self._model
         device = self._device
         if isinstance(fisher_shapes, str):
@@ -111,7 +112,7 @@ class FisherManager(MatrixManager):
             if seed:
                 torch.random.manual_seed(seed)
 
-            with no_centered_cov(model, fisher_shapes, cvp=fvp, vectors=vec, stream=stream, rank=rank, max_itr=max_itr) as cxt:
+            with no_centered_cov(model, fisher_shapes, cvp=fvp, vectors=vec, stream=stream, rank=rank, max_itr=max_itr, new_curvature=new_curvature) as cxt:
                 def closure(loss_expr, retain_graph=False):
                     cxt.clear_batch_grads()
                     loss = loss_expr()

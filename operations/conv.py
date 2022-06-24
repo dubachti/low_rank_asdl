@@ -95,8 +95,7 @@ class Conv2d(Operation):
         m = in_data.transpose(0, 1).flatten(start_dim=1).div(out_size**0.5)
         eig, vec = power_method(Kron_lr.kronvp_fn(m.T, diag=False), m.T.shape, 
                             top_n=rank, max_itr=max_itr, device=m.get_device())
-        #return eig.div(out_size), vec, torch.sum(m**2, dim=1).div(out_size)
-        return eig, vec #, torch.sum(m**2, dim=1)
+        return eig, vec
 
     @staticmethod
     def cov_kron_lr_B(module, out_grads, rank, max_itr):

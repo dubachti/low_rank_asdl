@@ -114,28 +114,18 @@ def power_method(mvp_fn,
                 device,
                 tol=1e-6,
                 random_seed=None):
-
     assert top_n >= 1, f'rank {top_n} not possible'
     assert max_itr >= 1, f'max_iters = {max_itr} not possible'
-
     if top_n > min(shape): top_n = min(shape)
-
-    #device = torch.device('cpu')
-
-    eigvals = []
-    eigvecs = []
-
+    device = torch.device('cpu')
+    eigvals, eigvecs = [], []
     for i in range(top_n):
-
         vec = torch.rand(shape[1], device='cpu')
-        #vec = torch.ones(shape[1], device='cpu')
-
         eigval = None
         last_eigval = None
         # power iteration
         for j in range(max_itr):
             vec = _orthonormal(vec, eigvecs)
-            #Mv = _mvp(mvp_fn, vec, random_seed=random_seed)
             Mv = _mvp(mvp_fn, vec.to(device), random_seed=random_seed).to('cpu')
             eigval = Mv.dot(vec)
             if j > 0:
@@ -144,15 +134,8 @@ def power_method(mvp_fn,
                     break
             last_eigval = eigval
             vec = Mv
-
-        ####
-        #with open('/users/tdubach/count_itr/iterations_count.txt', 'a+') as f:
-        #    f.write(f'{j+1} \n')
-        ####
-
         eigvals.append(eigval)
         eigvecs.append(vec)
-    
     return torch.tensor(eigvals, device=device), torch.stack(eigvecs).to(device)
 
 @nvtx.range('_mvp')

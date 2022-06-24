@@ -24,46 +24,6 @@ __all__ = [
     'UnitWiseNaturalGradient', 'DiagNaturalGradient', 'EmpiricalNaturalGradient'
 ]
 
-"""
-import pickle
-from asdfghjkl.symmatrix import Kron_lr2
-class Save:
-    count = 0
-    @staticmethod
-    def save(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
-        if Save.count % 210 in range(0,21):
-            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
-            a = matrix.A, layer_type, rank, itr
-            b = matrix.B, layer_type, rank, itr
-            kron_lr = Kron_lr2(a, b)
-            kron_lr.update_inv(1e-2)
-            grad_kron_lr = kron_lr.mvp(vec_weight=vec_weight, vec_bias=None, use_inv=True, inplace=False)
-            grad_kron_lr = grad_kron_lr.reshape((-1,1)).squeeze()
-            grad_kron = grad_kron.reshape((-1,1)).squeeze()
-            cos = torch.dot(grad_kron_lr,grad_kron)/(max(torch.dot(grad_kron_lr,grad_kron_lr)**0.5 * torch.dot(grad_kron,grad_kron)**0.5, 1e-9))
-            
-            with open('/users/tdubach/error/cosine_sim.txt', 'ab+') as fp:
-                pickle.dump(cos, fp)
-            
-            kron_norm = torch.linalg.vector_norm(grad_kron)
-            kron_lr_norm  = torch.linalg.vector_norm(grad_kron_lr)
-            norm = torch.abs(kron_norm-kron_lr_norm)/kron_norm
-
-            with open('/users/tdubach/error/norm.txt', 'ab+') as fp:
-                pickle.dump(norm, fp)
-        Save.count += 1
-    @staticmethod
-    def save_facs(matrix, vec_weight, vec_bias, grad_kron: torch.Tensor, rank, itr):
-        if Save.count % 4200 in range(0,21):
-            layer_type = 'c' if Save.count % 210 in range(0,20) else 'l'
-            with open('/users/tdubach/error/kron_a.txt', 'ab+') as fp:
-                pickle.dump(matrix.A, fp)
-            with open('/users/tdubach/error/kron_b.txt', 'ab+') as fp:
-                pickle.dump(matrix.B, fp)
-        Save.count += 1
-"""
-
-
 class NaturalGradient:
     """
     Args:
@@ -238,7 +198,8 @@ class NaturalGradient:
                          module_name=None,
                          num_batches=None,
                          kron=None,
-                         no_save=False):
+                         no_save=False,
+                         new_curvature=True):
         if ema_decay is None:
             ema_decay = self.ema_decay
         if ema_decay != _invalid_ema_decay:
@@ -283,7 +244,8 @@ class NaturalGradient:
                                                        scale=scale,
                                                        stream=stream,
                                                        rank=self.rank, 
-                                                       max_itr=self.max_itr)
+                                                       max_itr=self.max_itr,
+                                                       new_curvature=new_curvature)
             return rst[0], rst[1]  # loss and outputs
 
     def save_curvature(self, cxt, scale=1., module=None, module_name=None):
@@ -470,15 +432,7 @@ class NaturalGradient:
             if vec_bias is not None:
                 vec_bias.data.mul_(grad_scale)
 
-        #weight = vec_weight.clone()
-        #a = matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
         matrix.mvp(vec_weight=vec_weight, vec_bias=vec_bias, use_inv=True, inplace=True)
-
-        #####################
-        #if isinstance(a, tuple): a = a[0]
-        #Save.save_facs(matrix, vec_weight, vec_bias, a, self.rank, self.max_itr)
-        #Save.save(matrix, weight, vec_bias, a, self.rank, self.max_itr)
-        #####################
 
     def is_module_for_inv_and_precondition(self, module: nn.Module):
         if module not in self.modules_for_curvature:

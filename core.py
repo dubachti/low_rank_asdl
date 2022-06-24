@@ -24,7 +24,8 @@ def extend(model,
            vectors: ParamVector = None,
            stream: Stream = None,
            rank: int = 1,
-           max_itr: int = 1) -> OperationContext:
+           max_itr: int = 1,
+           new_curvature: bool = True) -> OperationContext:
     handles = []
     cxt = OperationContext(vectors=vectors)
     stream_cxt = torch.cuda.stream(stream) if torch.cuda.is_available() and stream is not None else nullcontext()
@@ -46,22 +47,22 @@ def extend(model,
                 if has_bwd_op_with_inputs:
                     def forward_hook(_module, in_data, out_data):
                         with stream_cxt:
-                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr)
+                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr, new_curvature=new_curvature)
                         if out_data.requires_grad:
                             def _backward_hook(out_grads):
                                 with stream_cxt:
-                                    cxt.call_operations_in_backward(_module, in_data[0].detach(), out_data.detach(), out_grads.detach(), rank=rank, max_itr=max_itr)
+                                    cxt.call_operations_in_backward(_module, in_data[0].detach(), out_data.detach(), out_grads.detach(), rank=rank, max_itr=max_itr, new_curvature=new_curvature)
                             handles.append(out_data.register_hook(_backward_hook))
                 else:
                     def forward_hook(_module, in_data, out_data):
                         with stream_cxt:
-                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr)
+                            cxt.call_operations_in_forward(_module, in_data[0].detach(), out_data.detach(), rank=rank, max_itr=max_itr, new_curvature=new_curvature)
                 handles.append(module.register_forward_hook(forward_hook))
             if (not has_bwd_op_with_inputs) and has_bwd_op:
                 def backward_hook(_module, in_grads, out_grads):
                     with stream_cxt:
                         try:
-                            cxt.call_operations_in_backward(_module, None, in_grads[0], out_grads[0].detach(), rank=rank, max_itr=max_itr)
+                            cxt.call_operations_in_backward(_module, None, in_grads[0], out_grads[0].detach(), rank=rank, max_itr=max_itr, new_curvature=new_curvature)
                         except NameError:
                              # context resource is already released.
                             pass
@@ -76,13 +77,13 @@ def extend(model,
 
     finally:
         # remove hooks and operations from modules
-        for handle in handles:
-            handle.remove()
-        cxt.clear_operations()
-        del cxt
+            for handle in handles:
+                handle.remove()
+            cxt.clear_operations()
+            del cxt
 
 
-def no_centered_cov(model: nn.Module, shapes, ignore_modules=None, cvp=False, vectors: ParamVector = None, stream: Stream = None, rank = 1, max_itr = 1) -> OperationContext:
+def no_centered_cov(model: nn.Module, shapes, ignore_modules=None, cvp=False, vectors: ParamVector = None, stream: Stream = None, rank = 1, max_itr = 1, new_curvature=True) -> OperationContext:
     shape_to_op = {
         SHAPE_FULL: OP_BATCH_GRADS,  # full
         SHAPE_LAYER_WISE: OP_CVP if cvp else OP_COV,  # layer-wise block-diagonal
@@ -91,7 +92,7 @@ def no_centered_cov(model: nn.Module, shapes, ignore_modules=None, cvp=False, ve
         SHAPE_UNIT_WISE: OP_COV_UNIT_WISE,  # unit-wise block-diagonal
         SHAPE_DIAG: OP_COV_DIAG,  # diagonal
     }
-    return extend(model, *shapes, ignore_modules=ignore_modules, map_rule=lambda s: shape_to_op[s], vectors=vectors, stream=stream, rank=rank, max_itr=max_itr)
+    return extend(model, *shapes, ignore_modules=ignore_modules, map_rule=lambda s: shape_to_op[s], vectors=vectors, stream=stream, rank=rank, max_itr=max_itr, new_curvature=new_curvature)
 
 
 def save_inputs_outgrads(model: nn.Module, targets=None, ignore_modules=None) -> OperationContext:
@@ -221,7 +222,6 @@ def module_wise_assignments(model, *assign_rules, ignore_modules=None, map_rule=
         if any(keyword == name for keyword in ignore_modules if isinstance(keyword, str)):
             continue
         module_info = (name, module) if named else (module,)
-
         requires_grad = False
         for attr in ['weight', 'bias']:
             param = getattr(module, attr, None)
@@ -234,7 +234,7 @@ def module_wise_assignments(model, *assign_rules, ignore_modules=None, map_rule=
 
         if module in specified_asgmts:
             yield *module_info, specified_asgmts[module]
-        elif any(isinstance(key, str) and key in name for key in specified_asgmts):
+        elif any(isinstance(key, str) and key == name for key in specified_asgmts):
             key = next(key for key in specified_asgmts if isinstance(key, str) and key in name)
             yield *module_info, specified_asgmts[key]
         elif module.__class__ in specified_asgmts:
