@@ -7,9 +7,7 @@ Note that the code requires CUDA to run.
 # Overview
 Natural Gradient Descent (NGD)[add ref.] is a second order optimization algorithm given by
 $
-\begin{equation}
 \theta^{t+1} \leftarrow \theta^t - \eta (\mathbf{F} + \lambda \mathbf{I})^{-1} \nabla \mathcal{L}(\theta^t)
-\end{equation}
 $
 where $\theta^t$ are the paramters of step $t$,  $\eta$ the learning rate,  $F$ the Fisher information matrix, $\lambda$ the damping value for the inverse calculation and $\nabla \mathcal{L}(\theta^t)$ the loss gradient.
 The advantage to first-order optimization methods such as SGD or Adam is the faster convergence in the number of steps.
