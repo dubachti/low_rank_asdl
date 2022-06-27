@@ -6,6 +6,8 @@ Note that the code requires CUDA to run.
 
 # Overview
 Natural Gradient Descent (NGD)[add ref.] is a second order optimization algorithm given by
+
+<img src="https://render.githubusercontent.com/render/math?math=\theta^{t+1} \leftarrow \theta^t - \eta (\mathbf{F} + \lambda \mathbf{I})^{-1} \nabla \mathcal{L}(\theta^t)">
 $
 \theta^{t+1} \leftarrow \theta^t - \eta (\mathbf{F} + \lambda \mathbf{I})^{-1} \nabla \mathcal{L}(\theta^t)
 $
