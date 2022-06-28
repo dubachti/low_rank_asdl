@@ -107,13 +107,13 @@ def sherman_morrison_inv(eig: torch.Tensor,
     return inv
 
 @nvtx.range('power_method')
-def power_method(mvp_fn,
-                shape,
-                top_n,
-                max_itr,
-                device,
-                tol=1e-6,
-                random_seed=None):
+def power_method(mvp_fn: Callable[[torch.Tensor], torch.Tensor],
+                 shape: torch.Size,
+                 top_n: int,
+                 max_itr: int,
+                 device: torch.device,
+                 tol: int = 1e-6,
+                 random_seed: float =None):
     assert top_n >= 1, f'rank {top_n} not possible'
     assert max_itr >= 1, f'max_iters = {max_itr} not possible'
     if top_n > min(shape): top_n = min(shape)
