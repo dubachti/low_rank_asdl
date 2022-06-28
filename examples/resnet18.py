@@ -46,7 +46,7 @@ def main():
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=100, shuffle=False, num_workers=2)
 
-    net = models.resnet18()
+    net = models.resnet18() # in-place operations for torch.models have to be disabled
     net.fc = torch.nn.Linear(512, 10) # adjust last layer to size 10
     net = net.to(device)
     if device == 'cuda':
