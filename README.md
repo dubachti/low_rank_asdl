@@ -18,3 +18,4 @@ The low-rank approximation is calculated efficiently using the power-iteration a
 - The code requires CUDA to run. 
 	However, if no CUDA is present this can be worked around by commenting out the nvtx tag in the code.
 - If per-built models of torchvision.models are used the in-place operations have to be turned off.
+- The code was developed and tested on Python 3.9.7.
