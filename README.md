@@ -1,6 +1,7 @@
 # Low-rank ASDL
 
 Extended [Automatic Second-order Differentiation Library](https://github.com/kazukiosawa/asdfghjkl/tree/0.1) (ASDL) that enables low-rank [Kronecker-factored Approximate Curvature](https://arxiv.org/abs/1503.05671)(K-FAC) for training deep neural networks. 
+
 The written report which explains the mathematical principles, argues about the decisions made and classifies the results obtained can be seen under the following link: [low-rank ASDL report](https://www.research-collection.ethz.ch/handle/20.500.11850/559711)
 
 # Overview
