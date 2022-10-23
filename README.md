@@ -14,6 +14,10 @@ In order to decrease the time and memory consumption even further can **low-rank
 
 The low-rank approximation is calculated efficiently using the power-iteration and the inverse is received by recursively applying the Shermann-Morrison inverse.
 
+# Documentation
+
+The written report which explains the mathematical principles, argues about the decisions made and classifies the results obtained can be seen under the following link: [low-rank ASDL report](https://www.research-collection.ethz.ch/handle/20.500.11850/559711)
+
 # Further information
 - The code requires CUDA to run. 
 	However, if no CUDA is present this can be worked around by commenting out the nvtx tag in the code.
