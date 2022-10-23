@@ -1,6 +1,7 @@
 # Low-rank ASDL
 
 Extended [Automatic Second-order Differentiation Library](https://github.com/kazukiosawa/asdfghjkl/tree/0.1) (ASDL) that enables low-rank [Kronecker-factored Approximate Curvature](https://arxiv.org/abs/1503.05671)(K-FAC) for training deep neural networks. 
+The written report which explains the mathematical principles, argues about the decisions made and classifies the results obtained can be seen under the following link: [low-rank ASDL report](https://www.research-collection.ethz.ch/handle/20.500.11850/559711)
 
 # Overview
 Natural Gradient Descent (NGD) is a second order optimization algorithm which uses the Fisher information matrix as curvature information.
@@ -13,10 +14,6 @@ Despite the huge dimensinality reduction is a K-FAC iteration still much slower 
 In order to decrease the time and memory consumption even further can **low-rank K-FAC** be applied, which approximates the Kronecker-factors A and B by a low-rank and low-rank + diagonal approach respectively. The B factor uses the additional diagonal approach as a diminant diagonal could be observed.
 
 The low-rank approximation is calculated efficiently using the power-iteration and the inverse is received by recursively applying the Shermann-Morrison inverse.
-
-# Documentation
-
-The written report which explains the mathematical principles, argues about the decisions made and classifies the results obtained can be seen under the following link: [low-rank ASDL report](https://www.research-collection.ethz.ch/handle/20.500.11850/559711)
 
 # Further information
 - The code requires CUDA to run. 
